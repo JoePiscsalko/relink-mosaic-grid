@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Single-page app: send everything that isn't a file or the API to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
