@@ -1,16 +1,18 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 
 /* ==================================================================
-   MOSAIC GRID — SBU x channel performance
+   MOSAIC GRID — SBU x channel performance, filterable by date
 
-   Google Ads numbers below are real: campaign export for
-   April 28 – July 27, 2026. Every other channel is empty until
-   you import it, so nothing on screen is invented.
+   Data is stored as dated rows, not as totals. Every number you see
+   is added up from rows inside the selected date range, so changing
+   the range changes everything: cells, roll-ups, trends and PDFs.
 
-   To refresh: export campaigns from Google Ads and drop the file
-   straight into Import CSV. No editing needed — it reads the raw
-   UTF-16 tab-separated download, skips the title rows, and assigns
-   business units from the campaign name using CAMPAIGN_RULES.
+   A row with week = null is undated — it came from an export that
+   wasn't segmented by time. Undated rows only appear under "All
+   time", because there's no honest way to slice them.
+
+   To get dated rows: segment the export by week (Google) or export
+   daily (LinkedIn). The importer buckets days into weeks itself.
 ================================================================== */
 
 const SBUS = [
@@ -31,8 +33,6 @@ const CHANNELS = [
   { key: "toolkit", name: "Sales Tool Kit", reach: "Touches",     paid: false, note: "What the AE team carries" },
 ];
 
-/* Campaign name -> business unit. Checked top to bottom, first match wins.
-   Add a rule here and next week's import assigns itself. */
 const CAMPAIGN_RULES = [
   { match: "blended",         sbu: "brand" },
   { match: "branded",         sbu: "brand" },
@@ -40,18 +40,17 @@ const CAMPAIGN_RULES = [
   { match: "ready -",         sbu: "ready" },
   { match: "rental",          sbu: "ready" },
   { match: "disposition",     sbu: "disp" },
+  { match: "commercial",      sbu: "disp" },
   { match: "auction",         sbu: "mev" },
   { match: "vendor",          sbu: "mev" },
   { match: "most wanted",     sbu: "mev" },
   { match: "net new",         sbu: "netnew" },
   { match: "hospital acquis", sbu: "netnew" },
-  { match: "commercial",      sbu: "disp" },
   { match: "relink online",   sbu: "trans" },
   { match: "ebay",            sbu: "trans" },
   { match: "360",             sbu: "r360" },
 ];
 
-/* Google Ads campaign type -> channel row */
 const TYPE_RULES = [
   { match: "performance max", channel: "google" },
   { match: "shopping",        channel: "google" },
@@ -62,289 +61,359 @@ const TYPE_RULES = [
   { match: "discovery",       channel: "display" },
 ];
 
-const c = (name, spend, leads, reach, clicks) => ({ name, status: "live", spend, leads, reach, clicks });
-
-/* Real: Google Ads campaign export, Apr 28 - Jul 27 2026.
-   Conversions rounded to whole numbers. No weekly segment in that
-   export, so no trend lines yet. */
-const SEED = {
-  "ready|google": { campaigns: [
-    c("Ready Products - PMAX", 15072, 137, 3947001, 39856),
-    c("Ready Products - Rental", 6478, 161, 24412, 2161),
-    c("Ready Products - Top Brands", 4217, 13, 14972, 974),
-    c("Ready Products - Repair", 4069, 55, 8218, 759)]},
-  "disp|google": { campaigns: [
-    c("Disposition - PMAX Shopping Feed ONLY", 17091, 319, 2194856, 31207),
-    c("Disposition - Used Medical Equipment", 5443, 120, 16663, 1458),
-    c("Disposition - Used Medical Equipment - Product Type", 2831, 10, 15868, 923),
-    c("Commercial - Disposition Partners", 887, 7, 2707, 322)]},
-  "mev|google": { campaigns: [
-    c("Monthly Auction Campaign", 1185, 34, 6302, 767)]},
-  "brand|google": { campaigns: [
-    c("Blended - Branded", 1465, 381, 3345, 1413)]},
-
-  /* Real: LinkedIn Campaign Manager export. Note the shorter window —
-     30 days against Google's 90, so don't read across the two. */
-  "disp|social": { period: "LinkedIn, Jun 30 \u2013 Jul 29 2026", campaigns: [
-    c("Commercial - Custom Audiences - 2026", 1829, 0, 1109, 3),
-    c("Commercial - RM Remarketing - 2026", 738, 2, 15660, 77),
-    c("Commercial - List Targeting - 2026", 349, 0, 2284, 11)]},
-  "ready|social":  { status: "planned", note: "No LinkedIn campaigns running for Ready." },
-  "r360|social":   { status: "planned", note: "No LinkedIn campaigns running for 360." },
-  "netnew|social": { status: "planned", note: "No LinkedIn campaigns running for Net New." },
-
-  "r360|google":   { status: "planned", note: "No Google campaigns running for 360." },
-  "netnew|google": { status: "planned", note: "No Google campaigns running for Net New." },
-  "trans|google":  { status: "planned", note: "No Google campaigns running for Transactional." },
+const NO_DATA = {
+  "ready|display": "No Display campaigns running for Ready.",
+  "r360|google":   "No Google campaigns running for 360.",
+  "netnew|google": "No Google campaigns running for Net New.",
+  "trans|google":  "No Google campaigns running for Transactional.",
+  "ready|social":  "No LinkedIn campaigns running for Ready.",
+  "r360|social":   "No LinkedIn campaigns running for 360.",
+  "netnew|social": "No LinkedIn campaigns running for Net New.",
 };
 
-/* Real: Google Ads search keyword report, same window. Search campaigns
-   only — Performance Max does not expose keywords, so the two PMAX
-   campaigns show campaign totals with no keyword breakdown. */
-const k = (text, match, spend, leads, reach, clicks) => ({ text, match, spend, leads, reach, clicks });
+/* row: business unit, channel, week (null = undated), name, spend, leads, reach, clicks */
+const r = (s, ch, week, name, spend, leads, reach, clicks) => ({ s, ch, week, name, spend, leads, reach, clicks });
+const q = (s, ch, week, text, match, spend, leads, reach, clicks) => ({ s, ch, week, text, match, spend, leads, reach, clicks });
 
-const KEYWORDS = {
-  "ready|google": [
-    k("rent hospital equipment","Phrase",1595,36,6375,535),
-    k("medical equipment rental","Phrase",1216,29,4775,424),
-    k("medical equipment repair companies","Phrase",1188,13,2527,216),
-    k("covidien","Phrase",1163,4,3081,282),
-    k("medical equipment repair companies near me","Phrase",1099,20,1795,208),
-    k("medical rentals","Phrase",1087,37,3643,358),
-    k("medical equipment rental companies","Phrase",988,21,3468,307),
-    k("medical equipment repair services","Phrase",828,7,1524,138),
-    k("medical equipment rental near me","Phrase",734,15,2786,232),
-    k("covidien products","Exact",501,1,1321,145),
-    k("medical equipment repair near me","Phrase",358,3,614,71),
-    k("medical equipment repair","Phrase",347,6,888,64),
-    k("midmark exam table","Phrase",185,0,567,29),
-    k("medical equipment near me rental","Phrase",179,3,601,66),
-    k("draeger medical","Phrase",176,0,550,31),
-    k("stryker stretchers","Phrase",175,2,825,42),
-    k("carl zeiss","Phrase",160,0,576,26),
-    k("olympus scopes","Phrase",154,1,485,17),
-    k("zoll defibrillators","Phrase",151,0,355,23),
-    k("karl storz","Phrase",150,0,835,34),
-    k("surgical equipment repair","Phrase",141,4,543,35),
-    k("medical rentals near me","Phrase",138,2,779,69),
-    k("used medical equipment rental near me","Phrase",137,6,297,27),
-    k("stryker bed","Phrase",132,0,684,59),
-    k("stryker hospital bed","Phrase",121,1,745,60),
-    k("carl zeiss microscopy","Phrase",119,0,471,28),
-    k("medical equipment rentals in my area","Phrase",114,5,458,33),
-    k("stryker gurney","Phrase",109,0,568,21),
-    k("ritter by midmark","Phrase",108,0,420,22),
-    k("medical equipment rental prices","Phrase",97,5,310,27),
-    k("stryker endoscopy","Phrase",78,0,398,7),
-    k("philips intellivue","Phrase",75,0,308,11),
-    k("olympus endoscopy","Phrase",70,0,259,7),
-    k("ge healthcare patient monitors","Phrase",68,1,355,8),
-    k("emergency medical equipment rental","Phrase",67,1,148,20),
-    k("karl storz endoscope","Phrase",66,0,122,7),
-    k("patient monitor repair service","Phrase",58,2,134,15),
-    k("philips heart monitor","Phrase",54,1,93,7),
-    k("carl zeiss surgical microscopes","Phrase",53,1,140,8),
-    k("infusion pump repair service","Phrase",47,0,167,11),
-    k("midmark exam chairs","Phrase",45,0,264,12),
-    k("philips cardiac monitor","Phrase",43,0,155,15),
-    k("short-term medical equipment rental","Phrase",40,0,114,11),
-    k("mindray anesthesia machine","Phrase",40,0,81,7),
-    k("affordable medical equipment rental","Phrase",37,1,193,17),
-    k("philips patient monitors","Phrase",34,0,238,11),
-    k("medical device rental near me","Phrase",32,1,295,24),
-    k("welch allyn medical equipment","Phrase",28,0,175,11),
-    k("zoll aed","Phrase",25,1,227,9),
-    k("philips ultrasound","Phrase",22,0,193,6),
-    k("ritter exam tables","Phrase",18,0,55,5),
-    k("zoll aed plus","Phrase",17,0,36,2),
-    k("storz endoscope","Phrase",16,0,43,5),
-    k("hill rom medical devices","Phrase",16,0,13,2),
-    k("used stryker stretcher for sale","Phrase",13,0,29,3),
-    k("welch allyn medical devices","Phrase",12,0,121,5),
-    k("stryker hospital beds for sale","Phrase",11,0,45,4),
-    k("medical equipment rental store near me","Phrase",10,0,58,7),
-    k("biomedical equipment repair","Phrase",5,0,21,1),
-    k("zoll aed 3","Phrase",5,0,14,1),
-    k("diagnostic imaging equipment rental","Phrase",3,0,22,2),
-    k("mindray anesthesia monitor","Phrase",3,0,3,1),
-    k("ventilator rental service","Phrase",3,0,66,2),
-    k("philips intellivue x3","Phrase",2,0,20,1),
-    k("drager apollo anesthesia machine","Phrase",0,0,7,0),
-    k("fluke multimeters","Phrase",0,0,16,0),
-    k("mindray anesthesia","Phrase",0,0,11,0),
-    k("medical device maintenance services","Phrase",0,0,3,0),
-    k("medical device repair companies","Phrase",0,0,2,0),
-    k("ECG monitor rental","Phrase",0,0,5,0),
-    k("surgical equipment rental near me","Phrase",0,0,1,0),
-    k("rental of medical equipment near me","Phrase",0,0,17,0),
-    k("medical equipment servicing companies","Phrase",0,0,1,0),
-    k("ge carescape b450","Phrase",0,0,2,0),
-    k("ge carescape b650","Phrase",0,0,1,0),
-    k("philips hospital monitor","Phrase",0,0,2,0),
-    k("philips mx40","Phrase",0,0,12,0),
-    k("philips vital signs monitor","Phrase",0,0,10,0),
-    k("philips intellivue mx40","Phrase",0,0,8,0),
-    k("philips intellivue mp30","Phrase",0,0,1,0),
-    k("baxter infusion pump","Phrase",0,0,2,0),
-    k("baxter IV systems","Phrase",0,0,7,0),
-    k("medrad medical equipment","Phrase",0,0,9,0),
-    k("draeger anesthesia","Phrase",0,0,7,0),
-    k("fluke biomedical products","Phrase",0,0,3,0),
-    k("ritter medical exam table","Phrase",0,0,4,0),
-  ],
-  "disp|google": [
-    k("Buy Medical Devices","Phrase",2669,44,7695,387),
-    k("medical equipment disposition","Broad",863,7,2550,317),
-    k("Used Medical Instruments","Phrase",663,24,1744,215),
-    k("ophthalmic instruments","Phrase",515,4,3796,165),
-    k("Reconditioned Medical Equipment","Phrase",432,11,1691,176),
-    k("Preowned Medical Equipment","Phrase",342,7,1131,153),
-    k("Refurbished Medical Instruments","Phrase",323,0,775,75),
-    k("Refurbished Medical Equipment","Phrase",267,11,740,90),
-    k("medical monitoring devices","Phrase",263,2,1525,51),
-    k("Used Medical Devices","Phrase",228,1,717,93),
-    k("exam tables","Phrase",188,1,941,64),
-    k("used ophthalmic equipment","Phrase",167,0,357,57),
-    k("ophthalmology equipment","Phrase",158,0,960,53),
-    k("Medical Equipment Liquidation","Phrase",139,4,499,74),
-    k("medical exam tables","Phrase",132,1,551,45),
-    k("Refurbished Medical Devices","Phrase",118,5,339,29),
-    k("ultrasound equipment","Phrase",111,0,449,19),
-    k("medical beds for sale","Phrase",108,0,606,53),
-    k("ultrasound for sale","Phrase",94,0,705,34),
-    k("vital sign monitor","Phrase",93,1,327,15),
-    k("used medical equipment near me","Phrase",82,5,418,59),
-    k("electrosurgical generator","Phrase",81,0,840,26),
-    k("Second Hand Medical Equipment","Phrase",73,0,208,27),
-    k("blood pressure machine for home","Phrase",73,0,225,17),
-    k("used hospital beds for sale","Phrase",65,0,385,48),
-    k("used hospital beds","Phrase",57,0,241,35),
-    k("used medical exam tables","Phrase",56,0,118,17),
-    k("ophthalmic equipment for sale","Phrase",54,0,382,18),
-    k("used endoscopy equipment","Phrase",50,0,70,16),
-    k("electrosurgical devices","Phrase",48,0,252,12),
-    k("medical table","Phrase",47,0,218,8),
-    k("used exam tables","Phrase",41,0,199,22),
-    k("Second Hand Medical Instruments","Phrase",40,0,205,22),
-    k("hospital beds","Phrase",38,0,379,17),
-    k("blood pressure monitors","Phrase",35,0,203,9),
-    k("patient monitoring devices","Phrase",34,0,63,3),
-    k("we buy medical equipment","Phrase",33,9,253,30),
-    k("exam chairs","Phrase",33,0,252,12),
-    k("Affordable Medical Equipment","Phrase",29,1,217,25),
-    k("home bp monitor","Phrase",27,0,55,4),
-    k("used ultrasound machine for sale","Phrase",27,1,76,9),
-    k("used anesthesia machines","Phrase",26,0,51,10),
-    k("centurion service","Phrase",23,0,105,5),
-    k("anesthesia machine","Phrase",23,0,78,5),
-    k("hospital beds for sale","Phrase",21,0,132,10),
-    k("endoscopy equipment","Phrase",21,0,234,5),
-    k("refurbished ultrasound machine","Phrase",19,0,28,5),
-    k("anesthesia machine for sale","Phrase",18,0,176,4),
-    k("used ultrasound machine","Phrase",17,0,67,8),
-    k("patient monitor","Phrase",15,0,69,3),
-    k("used hospital beds for sale near me","Phrase",14,0,87,14),
-    k("ultrasound machine","Phrase",13,0,40,5),
-    k("electrosurgical unit","Phrase",13,0,181,4),
-    k("ophthalmic equipment","Phrase",8,0,73,3),
-    k("medical bed","Phrase",8,0,100,3),
-    k("rigid endoscope","Phrase",5,0,80,2),
-    k("smoke evacuation","Phrase",5,0,42,1),
-    k("hospital strecher","Phrase",4,0,47,3),
-    k("hospital beds for sale near me","Phrase",4,0,54,4),
-    k("Second Hand Medical Devices","Phrase",3,0,19,3),
-    k("operating table","Phrase",2,0,50,2),
-    k("portable blood pressure monitor","Phrase",1,0,2,1),
-    k("refurbished anesthesia machines","Phrase",1,0,10,1),
-    k("buy ultrasound machine","Phrase",1,0,2,1),
-    k("phacoemulsifier","Phrase",0,0,2,0),
-    k("portable ultrasound machine for sale","Phrase",0,0,1,0),
-    k("at home ultrasound machine","Phrase",0,0,1,0),
-    k("ultrasound machine for sale","Phrase",0,0,21,0),
-    k("portable ultrasound machine","Phrase",0,0,1,0),
-    k("bulk medical supplies","Phrase",0,0,3,0),
-    k("exam bed","Phrase",0,0,2,0),
-    k("patient bed","Phrase",0,0,17,0),
-    k("patient monitoring system","Phrase",0,0,3,0),
-    k("medical monitor","Phrase",0,0,5,0),
-    k("medical endoscopes","Phrase",0,0,1,0),
-    k("operating microscope","Phrase",0,0,1,0),
-    k("endoscopy camera","Phrase",0,0,2,0),
-    k("used microscope","Phrase",0,0,1,0),
-    k("stretcher chair","Phrase",0,0,3,0),
-    k("chair medical","Phrase",0,0,16,0),
-    k("medical chair","Phrase",0,0,1,0),
-    k("medical exam chair","Phrase",0,0,10,0),
-    k("electro surgical unit","Phrase",0,0,2,0),
-    k("Preowned Medical Devices","Phrase",0,0,5,0),
-    k("Wholesale Medical Devices","Phrase",0,0,4,0),
-    k("trimedx","Phrase",0,0,52,0),
-  ],
-  "brand|google": [
-    k("ReLink Medical","Phrase",1346,341,3010,1212),
-    k("Relink Online","Phrase",119,40,335,201),
-  ],
-  "mev|google": [
-    k("used hospital equipment","Phrase",640,0,3725,411),
-    k("medical equipment auction","Phrase",368,32,1304,243),
-    k("used medical supplies","Phrase",81,0,891,51),
-    k("medical supply auction","Phrase",46,2,159,30),
-    k("dental equipment auctions","Phrase",23,0,85,15),
-    k("medical device auction","Phrase",16,0,31,10),
-    k("used dental equipment","Phrase",8,0,88,5),
-    k("hospital equipment auctions","Phrase",3,0,19,2),
-  ],
-};
+/* Google Ads campaign export, Apr 28 - Jul 27 2026. Not segmented by
+   week, so these are undated. Re-export with Segment > Time > Week
+   and they become filterable. */
+const SEED_ROWS = [
+  r("ready","google",null,"Ready Products - PMAX",15072,137,3947001,42130),
+  r("ready","google",null,"Ready Products - Repair",4069,55,8218,759),
+  r("ready","google",null,"Ready Products - Rental",6478,161,24412,2161),
+  r("ready","google",null,"Ready Products - Top Brands",4217,13,14972,974),
+  r("disp","google",null,"Disposition - PMAX Shopping Feed ONLY",17091,319,2194856,32404),
+  r("disp","google",null,"Commercial - Disposition Partners",887,7,2707,322),
+  r("disp","google",null,"Disposition - Used Medical Equipment - Product Type",2831,10,15868,923),
+  r("disp","google",null,"Disposition - Used Medical Equipment",5443,120,16663,1458),
+  r("brand","google",null,"Blended - Branded",1465,381,3345,1413),
+  r("mev","google",null,"Monthly Auction Campaign",1185,34,6302,767),
+];
 
-Object.entries(KEYWORDS).forEach(([key, list]) => {
-  if (SEED[key]?.campaigns) SEED[key].keywords = list;
-});
+/* LinkedIn Campaign Manager, daily rows bucketed into weeks. */
+const SEED_LI = [
+  r("disp","social","2026-06-29","Commercial - Custom Audiences - 2026",473,0,224,0),
+  r("disp","social","2026-06-29","Commercial - List Targeting - 2026",84,0,441,3),
+  r("disp","social","2026-06-29","Commercial - RM Remarketing - 2026",197,0,4055,17),
+  r("disp","social","2026-07-06","Commercial - Custom Audiences - 2026",210,0,172,0),
+  r("disp","social","2026-07-06","Commercial - List Targeting - 2026",74,0,558,3),
+  r("disp","social","2026-07-06","Commercial - RM Remarketing - 2026",105,2,2607,17),
+  r("disp","social","2026-07-13","Commercial - Custom Audiences - 2026",350,0,207,1),
+  r("disp","social","2026-07-13","Commercial - List Targeting - 2026",87,0,635,3),
+  r("disp","social","2026-07-13","Commercial - RM Remarketing - 2026",168,0,3389,18),
+  r("disp","social","2026-07-20","Commercial - Custom Audiences - 2026",524,0,356,1),
+  r("disp","social","2026-07-20","Commercial - List Targeting - 2026",70,0,431,0),
+  r("disp","social","2026-07-20","Commercial - RM Remarketing - 2026",188,0,4059,16),
+  r("disp","social","2026-07-27","Commercial - Custom Audiences - 2026",273,0,150,1),
+  r("disp","social","2026-07-27","Commercial - List Targeting - 2026",35,0,219,2),
+  r("disp","social","2026-07-27","Commercial - RM Remarketing - 2026",80,0,1550,9),
+];
+
+/* Google Ads search keyword report, same window, also undated. */
+const SEED_KW = [
+  q("ready","google",null,"rent hospital equipment","Phrase",1595,36,6375,535),
+  q("ready","google",null,"medical equipment rental","Phrase",1216,29,4775,424),
+  q("ready","google",null,"medical equipment repair companies","Phrase",1188,13,2527,216),
+  q("ready","google",null,"covidien","Phrase",1163,4,3081,282),
+  q("ready","google",null,"medical equipment repair companies near me","Phrase",1099,20,1795,208),
+  q("ready","google",null,"medical rentals","Phrase",1087,37,3643,358),
+  q("ready","google",null,"medical equipment rental companies","Phrase",988,21,3468,307),
+  q("ready","google",null,"medical equipment repair services","Phrase",828,7,1524,138),
+  q("ready","google",null,"medical equipment rental near me","Phrase",734,15,2786,232),
+  q("ready","google",null,"covidien products","Exact",501,1,1321,145),
+  q("ready","google",null,"medical equipment repair near me","Phrase",358,3,614,71),
+  q("ready","google",null,"medical equipment repair","Phrase",347,6,888,64),
+  q("ready","google",null,"midmark exam table","Phrase",185,0,567,29),
+  q("ready","google",null,"medical equipment near me rental","Phrase",179,3,601,66),
+  q("ready","google",null,"draeger medical","Phrase",176,0,550,31),
+  q("ready","google",null,"stryker stretchers","Phrase",175,2,825,42),
+  q("ready","google",null,"carl zeiss","Phrase",160,0,576,26),
+  q("ready","google",null,"olympus scopes","Phrase",154,1,485,17),
+  q("ready","google",null,"zoll defibrillators","Phrase",151,0,355,23),
+  q("ready","google",null,"karl storz","Phrase",150,0,835,34),
+  q("ready","google",null,"surgical equipment repair","Phrase",141,4,543,35),
+  q("ready","google",null,"medical rentals near me","Phrase",138,2,779,69),
+  q("ready","google",null,"used medical equipment rental near me","Phrase",137,6,297,27),
+  q("ready","google",null,"stryker bed","Phrase",132,0,684,59),
+  q("ready","google",null,"stryker hospital bed","Phrase",121,1,745,60),
+  q("ready","google",null,"carl zeiss microscopy","Phrase",119,0,471,28),
+  q("ready","google",null,"medical equipment rentals in my area","Phrase",114,5,458,33),
+  q("ready","google",null,"stryker gurney","Phrase",109,0,568,21),
+  q("ready","google",null,"ritter by midmark","Phrase",108,0,420,22),
+  q("ready","google",null,"medical equipment rental prices","Phrase",97,5,310,27),
+  q("ready","google",null,"stryker endoscopy","Phrase",78,0,398,7),
+  q("ready","google",null,"philips intellivue","Phrase",75,0,308,11),
+  q("ready","google",null,"olympus endoscopy","Phrase",70,0,259,7),
+  q("ready","google",null,"ge healthcare patient monitors","Phrase",68,1,355,8),
+  q("ready","google",null,"emergency medical equipment rental","Phrase",67,1,148,20),
+  q("ready","google",null,"karl storz endoscope","Phrase",66,0,122,7),
+  q("ready","google",null,"patient monitor repair service","Phrase",58,2,134,15),
+  q("ready","google",null,"philips heart monitor","Phrase",54,1,93,7),
+  q("ready","google",null,"carl zeiss surgical microscopes","Phrase",53,1,140,8),
+  q("ready","google",null,"infusion pump repair service","Phrase",47,0,167,11),
+  q("ready","google",null,"midmark exam chairs","Phrase",45,0,264,12),
+  q("ready","google",null,"philips cardiac monitor","Phrase",43,0,155,15),
+  q("ready","google",null,"short-term medical equipment rental","Phrase",40,0,114,11),
+  q("ready","google",null,"mindray anesthesia machine","Phrase",40,0,81,7),
+  q("ready","google",null,"affordable medical equipment rental","Phrase",37,1,193,17),
+  q("ready","google",null,"philips patient monitors","Phrase",34,0,238,11),
+  q("ready","google",null,"medical device rental near me","Phrase",32,1,295,24),
+  q("ready","google",null,"welch allyn medical equipment","Phrase",28,0,175,11),
+  q("ready","google",null,"zoll aed","Phrase",25,1,227,9),
+  q("ready","google",null,"philips ultrasound","Phrase",22,0,193,6),
+  q("ready","google",null,"ritter exam tables","Phrase",18,0,55,5),
+  q("ready","google",null,"zoll aed plus","Phrase",17,0,36,2),
+  q("ready","google",null,"storz endoscope","Phrase",16,0,43,5),
+  q("ready","google",null,"hill rom medical devices","Phrase",16,0,13,2),
+  q("ready","google",null,"used stryker stretcher for sale","Phrase",13,0,29,3),
+  q("ready","google",null,"welch allyn medical devices","Phrase",12,0,121,5),
+  q("ready","google",null,"stryker hospital beds for sale","Phrase",11,0,45,4),
+  q("ready","google",null,"medical equipment rental store near me","Phrase",10,0,58,7),
+  q("ready","google",null,"biomedical equipment repair","Phrase",5,0,21,1),
+  q("ready","google",null,"zoll aed 3","Phrase",5,0,14,1),
+  q("ready","google",null,"diagnostic imaging equipment rental","Phrase",3,0,22,2),
+  q("ready","google",null,"mindray anesthesia monitor","Phrase",3,0,3,1),
+  q("ready","google",null,"ventilator rental service","Phrase",3,0,66,2),
+  q("ready","google",null,"philips intellivue x3","Phrase",2,0,20,1),
+  q("ready","google",null,"drager apollo anesthesia machine","Phrase",0,0,7,0),
+  q("ready","google",null,"fluke multimeters","Phrase",0,0,16,0),
+  q("ready","google",null,"mindray anesthesia","Phrase",0,0,11,0),
+  q("ready","google",null,"medical device maintenance services","Phrase",0,0,3,0),
+  q("ready","google",null,"medical device repair companies","Phrase",0,0,2,0),
+  q("ready","google",null,"ECG monitor rental","Phrase",0,0,5,0),
+  q("ready","google",null,"surgical equipment rental near me","Phrase",0,0,1,0),
+  q("ready","google",null,"rental of medical equipment near me","Phrase",0,0,17,0),
+  q("ready","google",null,"medical equipment servicing companies","Phrase",0,0,1,0),
+  q("ready","google",null,"ge carescape b450","Phrase",0,0,2,0),
+  q("ready","google",null,"ge carescape b650","Phrase",0,0,1,0),
+  q("ready","google",null,"philips hospital monitor","Phrase",0,0,2,0),
+  q("ready","google",null,"philips mx40","Phrase",0,0,12,0),
+  q("ready","google",null,"philips vital signs monitor","Phrase",0,0,10,0),
+  q("ready","google",null,"philips intellivue mx40","Phrase",0,0,8,0),
+  q("ready","google",null,"philips intellivue mp30","Phrase",0,0,1,0),
+  q("ready","google",null,"baxter infusion pump","Phrase",0,0,2,0),
+  q("ready","google",null,"baxter IV systems","Phrase",0,0,7,0),
+  q("ready","google",null,"medrad medical equipment","Phrase",0,0,9,0),
+  q("ready","google",null,"draeger anesthesia","Phrase",0,0,7,0),
+  q("ready","google",null,"fluke biomedical products","Phrase",0,0,3,0),
+  q("ready","google",null,"ritter medical exam table","Phrase",0,0,4,0),
+  q("disp","google",null,"Buy Medical Devices","Phrase",2669,44,7695,387),
+  q("disp","google",null,"medical equipment disposition","Broad",863,7,2550,317),
+  q("disp","google",null,"Used Medical Instruments","Phrase",663,24,1744,215),
+  q("disp","google",null,"ophthalmic instruments","Phrase",515,4,3796,165),
+  q("disp","google",null,"Reconditioned Medical Equipment","Phrase",432,11,1691,176),
+  q("disp","google",null,"Preowned Medical Equipment","Phrase",342,7,1131,153),
+  q("disp","google",null,"Refurbished Medical Instruments","Phrase",323,0,775,75),
+  q("disp","google",null,"Refurbished Medical Equipment","Phrase",267,11,740,90),
+  q("disp","google",null,"medical monitoring devices","Phrase",263,2,1525,51),
+  q("disp","google",null,"Used Medical Devices","Phrase",228,1,717,93),
+  q("disp","google",null,"exam tables","Phrase",188,1,941,64),
+  q("disp","google",null,"used ophthalmic equipment","Phrase",167,0,357,57),
+  q("disp","google",null,"ophthalmology equipment","Phrase",158,0,960,53),
+  q("disp","google",null,"Medical Equipment Liquidation","Phrase",139,4,499,74),
+  q("disp","google",null,"medical exam tables","Phrase",132,1,551,45),
+  q("disp","google",null,"Refurbished Medical Devices","Phrase",118,5,339,29),
+  q("disp","google",null,"ultrasound equipment","Phrase",111,0,449,19),
+  q("disp","google",null,"medical beds for sale","Phrase",108,0,606,53),
+  q("disp","google",null,"ultrasound for sale","Phrase",94,0,705,34),
+  q("disp","google",null,"vital sign monitor","Phrase",93,1,327,15),
+  q("disp","google",null,"used medical equipment near me","Phrase",82,5,418,59),
+  q("disp","google",null,"electrosurgical generator","Phrase",81,0,840,26),
+  q("disp","google",null,"Second Hand Medical Equipment","Phrase",73,0,208,27),
+  q("disp","google",null,"blood pressure machine for home","Phrase",73,0,225,17),
+  q("disp","google",null,"used hospital beds for sale","Phrase",65,0,385,48),
+  q("disp","google",null,"used hospital beds","Phrase",57,0,241,35),
+  q("disp","google",null,"used medical exam tables","Phrase",56,0,118,17),
+  q("disp","google",null,"ophthalmic equipment for sale","Phrase",54,0,382,18),
+  q("disp","google",null,"used endoscopy equipment","Phrase",50,0,70,16),
+  q("disp","google",null,"electrosurgical devices","Phrase",48,0,252,12),
+  q("disp","google",null,"medical table","Phrase",47,0,218,8),
+  q("disp","google",null,"used exam tables","Phrase",41,0,199,22),
+  q("disp","google",null,"Second Hand Medical Instruments","Phrase",40,0,205,22),
+  q("disp","google",null,"hospital beds","Phrase",38,0,379,17),
+  q("disp","google",null,"blood pressure monitors","Phrase",35,0,203,9),
+  q("disp","google",null,"patient monitoring devices","Phrase",34,0,63,3),
+  q("disp","google",null,"we buy medical equipment","Phrase",33,9,253,30),
+  q("disp","google",null,"exam chairs","Phrase",33,0,252,12),
+  q("disp","google",null,"Affordable Medical Equipment","Phrase",29,1,217,25),
+  q("disp","google",null,"home bp monitor","Phrase",27,0,55,4),
+  q("disp","google",null,"used ultrasound machine for sale","Phrase",27,1,76,9),
+  q("disp","google",null,"used anesthesia machines","Phrase",26,0,51,10),
+  q("disp","google",null,"centurion service","Phrase",23,0,105,5),
+  q("disp","google",null,"anesthesia machine","Phrase",23,0,78,5),
+  q("disp","google",null,"hospital beds for sale","Phrase",21,0,132,10),
+  q("disp","google",null,"endoscopy equipment","Phrase",21,0,234,5),
+  q("disp","google",null,"refurbished ultrasound machine","Phrase",19,0,28,5),
+  q("disp","google",null,"anesthesia machine for sale","Phrase",18,0,176,4),
+  q("disp","google",null,"used ultrasound machine","Phrase",17,0,67,8),
+  q("disp","google",null,"patient monitor","Phrase",15,0,69,3),
+  q("disp","google",null,"used hospital beds for sale near me","Phrase",14,0,87,14),
+  q("disp","google",null,"ultrasound machine","Phrase",13,0,40,5),
+  q("disp","google",null,"electrosurgical unit","Phrase",13,0,181,4),
+  q("disp","google",null,"ophthalmic equipment","Phrase",8,0,73,3),
+  q("disp","google",null,"medical bed","Phrase",8,0,100,3),
+  q("disp","google",null,"rigid endoscope","Phrase",5,0,80,2),
+  q("disp","google",null,"smoke evacuation","Phrase",5,0,42,1),
+  q("disp","google",null,"hospital strecher","Phrase",4,0,47,3),
+  q("disp","google",null,"hospital beds for sale near me","Phrase",4,0,54,4),
+  q("disp","google",null,"Second Hand Medical Devices","Phrase",3,0,19,3),
+  q("disp","google",null,"operating table","Phrase",2,0,50,2),
+  q("disp","google",null,"portable blood pressure monitor","Phrase",1,0,2,1),
+  q("disp","google",null,"refurbished anesthesia machines","Phrase",1,0,10,1),
+  q("disp","google",null,"buy ultrasound machine","Phrase",1,0,2,1),
+  q("disp","google",null,"phacoemulsifier","Phrase",0,0,2,0),
+  q("disp","google",null,"portable ultrasound machine for sale","Phrase",0,0,1,0),
+  q("disp","google",null,"at home ultrasound machine","Phrase",0,0,1,0),
+  q("disp","google",null,"ultrasound machine for sale","Phrase",0,0,21,0),
+  q("disp","google",null,"portable ultrasound machine","Phrase",0,0,1,0),
+  q("disp","google",null,"bulk medical supplies","Phrase",0,0,3,0),
+  q("disp","google",null,"exam bed","Phrase",0,0,2,0),
+  q("disp","google",null,"patient bed","Phrase",0,0,17,0),
+  q("disp","google",null,"patient monitoring system","Phrase",0,0,3,0),
+  q("disp","google",null,"medical monitor","Phrase",0,0,5,0),
+  q("disp","google",null,"medical endoscopes","Phrase",0,0,1,0),
+  q("disp","google",null,"operating microscope","Phrase",0,0,1,0),
+  q("disp","google",null,"endoscopy camera","Phrase",0,0,2,0),
+  q("disp","google",null,"used microscope","Phrase",0,0,1,0),
+  q("disp","google",null,"stretcher chair","Phrase",0,0,3,0),
+  q("disp","google",null,"chair medical","Phrase",0,0,16,0),
+  q("disp","google",null,"medical chair","Phrase",0,0,1,0),
+  q("disp","google",null,"medical exam chair","Phrase",0,0,10,0),
+  q("disp","google",null,"electro surgical unit","Phrase",0,0,2,0),
+  q("disp","google",null,"Preowned Medical Devices","Phrase",0,0,5,0),
+  q("disp","google",null,"Wholesale Medical Devices","Phrase",0,0,4,0),
+  q("disp","google",null,"trimedx","Phrase",0,0,52,0),
+  q("brand","google",null,"ReLink Medical","Phrase",1346,341,3010,1212),
+  q("brand","google",null,"Relink Online","Phrase",119,40,335,201),
+  q("mev","google",null,"used hospital equipment","Phrase",640,0,3725,411),
+  q("mev","google",null,"medical equipment auction","Phrase",368,32,1304,243),
+  q("mev","google",null,"used medical supplies","Phrase",81,0,891,51),
+  q("mev","google",null,"medical supply auction","Phrase",46,2,159,30),
+  q("mev","google",null,"dental equipment auctions","Phrase",23,0,85,15),
+  q("mev","google",null,"medical device auction","Phrase",16,0,31,10),
+  q("mev","google",null,"used dental equipment","Phrase",8,0,88,5),
+  q("mev","google",null,"hospital equipment auctions","Phrase",3,0,19,2),
+];
+
+const SEED = { rows: [...SEED_ROWS, ...SEED_LI], keywords: SEED_KW, period: "Seeded from Google Ads and LinkedIn exports" };
 
 const API = "/api/data";
+const STATUS = {
+  live:     { label: "Live",         color: "#90AD51" },
+  building: { label: "Building",     color: "#F38637" },
+  planned:  { label: "None running", color: "#0598A6" },
+  none:     { label: "No data",      color: "#2E2622" },
+};
+const METRICS = [
+  { key: "leads", label: "Leads" },
+  { key: "spend", label: "Spend" },
+  { key: "cpl",   label: "Cost per lead" },
+];
+const PRESETS = [
+  { key: "all", label: "All time", weeks: 0 },
+  { key: "4",   label: "Last 4 weeks",  weeks: 4 },
+  { key: "8",   label: "Last 8 weeks",  weeks: 8 },
+  { key: "13",  label: "Last 13 weeks", weeks: 13 },
+];
 
+/* ---------------- formatting ---------------- */
+const cpl = (spend, leads) => (leads > 0 && spend > 0 ? spend / leads : null);
+const money = (n) => (n >= 10000 ? "$" + (n / 1000).toFixed(1) + "k" : "$" + Math.round(n).toLocaleString());
+const moneyFull = (n) => "$" + Math.round(n).toLocaleString();
+const num = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + "M" : n >= 10000 ? Math.round(n / 1000) + "k" : Math.round(n).toLocaleString());
+const pct = (d) => (d > 0 ? "+" : "") + Math.round(d * 100) + "%";
+const today = () => new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+const prettyWeek = (w) => {
+  if (!w) return "";
+  const [y, m, d] = w.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+const prettyRange = (a, b) => (!a || !b ? "All time" : a === b ? `Week of ${prettyWeek(a)}` : `${prettyWeek(a)} \u2013 ${prettyWeek(b)}, ${b.slice(0, 4)}`);
+
+/* ---------------- aggregation ---------------- */
+/* Everything on screen comes through here. Rows in, cells out. */
+function aggregate(data, from, to) {
+  const inRange = (w) => (!from ? true : w ? w >= from && w <= to : false);
+  const cells = {};
+
+  const bucket = (key) => (cells[key] = cells[key] || { campaigns: {}, weeks: {}, keywords: {} });
+
+  (data.rows || []).forEach((row) => {
+    if (!inRange(row.week)) return;
+    const b = bucket(`${row.s}|${row.ch}`);
+    const c = (b.campaigns[row.name] = b.campaigns[row.name] || { name: row.name, spend: 0, leads: 0, reach: 0, clicks: 0 });
+    c.spend += row.spend; c.leads += row.leads; c.reach += row.reach; c.clicks += row.clicks;
+    if (row.week) b.weeks[row.week] = (b.weeks[row.week] || 0) + row.leads;
+  });
+
+  (data.keywords || []).forEach((row) => {
+    if (!inRange(row.week)) return;
+    const b = bucket(`${row.s}|${row.ch}`);
+    const id = row.text.toLowerCase();
+    const k = (b.keywords[id] = b.keywords[id] || { text: row.text, match: row.match, spend: 0, leads: 0, reach: 0, clicks: 0 });
+    k.spend += row.spend; k.leads += row.leads; k.reach += row.reach; k.clicks += row.clicks;
+  });
+
+  const out = {};
+  Object.entries(cells).forEach(([key, b]) => {
+    const campaigns = Object.values(b.campaigns).filter((c) => c.spend || c.leads || c.reach || c.clicks);
+    if (!campaigns.length) return;
+    const cell = { campaigns: campaigns.sort((a, c) => c.spend - a.spend) };
+    const kws = Object.values(b.keywords).filter((k) => k.spend || k.leads || k.clicks);
+    if (kws.length) cell.keywords = kws.sort((a, c) => c.spend - a.spend);
+
+    const wk = Object.keys(b.weeks).sort();
+    if (wk.length >= 3) {
+      const series = wk.map((w) => Math.round(b.weeks[w])).slice(-8);
+      if (series.reduce((a, c) => a + c, 0) >= 8) {
+        cell.trend = series;
+        const half = Math.floor(series.length / 2);
+        const prior = series.slice(0, half).reduce((a, c) => a + c, 0);
+        const recent = series.slice(half).reduce((a, c) => a + c, 0);
+        if (prior >= 5) cell.delta = (recent - prior) / prior;
+      }
+    }
+    cell.dated = wk.length > 0;
+    out[key] = cell;
+  });
+  return out;
+}
+
+const weeksIn = (data) => {
+  const set = new Set();
+  (data.rows || []).forEach((x) => x.week && set.add(x.week));
+  (data.keywords || []).forEach((x) => x.week && set.add(x.week));
+  return [...set].sort();
+};
+const undatedCount = (data) => (data.rows || []).filter((x) => !x.week).length + (data.keywords || []).filter((x) => !x.week).length;
+
+const statusOf = (cell, key) => (cell ? "live" : NO_DATA[key] ? "planned" : "none");
+function totals(cell) {
+  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, count: 0 };
+  if (!cell) return t;
+  cell.campaigns.forEach((k) => { t.spend += k.spend; t.leads += k.leads; t.reach += k.reach; t.clicks += k.clicks; t.count++; });
+  return t;
+}
+function metricValue(key, t) {
+  if (key === "leads") return { text: t.leads.toLocaleString(), unit: "leads" };
+  if (key === "spend") return { text: t.spend ? money(t.spend) : "$0", unit: "spend" };
+  const x = cpl(t.spend, t.leads);
+  return { text: x ? "$" + Math.round(x) : "\u2014", unit: "per lead" };
+}
+
+/* ---------------- storage ---------------- */
 async function loadRemote() {
   const res = await fetch(API, { headers: { accept: "application/json" } });
   if (!res.ok) throw new Error("load failed");
   return res.json();
 }
 async function saveRemote(payload) {
-  const res = await fetch(API, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(out.error || "Save failed.");
   return out;
 }
-
-/* Trends drawn from saved snapshots rather than from the export.
-   Once there are three weekly saves this fills itself in. */
-function historyTrend(index, key) {
-  if (!index || index.length < 3) return null;
-  const series = index.slice(-8).map((e) => Math.round(e.totals?.[key]?.leads || 0));
-  const volume = series.reduce((a, b) => a + b, 0);
-  if (volume < 8) return null;
-  const half = Math.floor(series.length / 2);
-  const prior = series.slice(0, half).reduce((a, b) => a + b, 0);
-  const recent = series.slice(half).reduce((a, b) => a + b, 0);
-  return { trend: series, delta: prior >= 5 ? (recent - prior) / prior : undefined };
-}
-
-const DEFAULT_PERIOD = "Google Ads, Apr 28 \u2013 Jul 27 2026";
-
-const STATUS = {
-  live:     { label: "Live",        color: "#90AD51" },
-  building: { label: "Building",    color: "#F38637" },
-  planned:  { label: "None running", color: "#0598A6" },
-  none:     { label: "No data",     color: "#2E2622" },
-};
-
-const METRICS = [
-  { key: "leads", label: "Leads" },
-  { key: "spend", label: "Spend" },
-  { key: "cpl",   label: "Cost per lead" },
-];
 
 /* ---------------- file decoding ---------------- */
 function decodeBuffer(buf) {
@@ -356,34 +425,26 @@ function decodeBuffer(buf) {
   if (nul > n / 5) return new TextDecoder("utf-16le").decode(buf);
   return new TextDecoder("utf-8").decode(buf).replace(/^\ufeff/, "");
 }
-
 function detectDelim(text) {
   const head = text.split("\n").slice(0, 10).join("\n");
-  const t = (head.match(/\t/g) || []).length;
-  const s = (head.match(/;/g) || []).length;
-  const cm = (head.match(/,/g) || []).length;
-  if (t > 0 && t >= cm && t >= s) return "\t";
-  if (s > cm) return ";";
-  return ",";
+  const t = (head.match(/\t/g) || []).length, s = (head.match(/;/g) || []).length, c = (head.match(/,/g) || []).length;
+  if (t > 0 && t >= c && t >= s) return "\t";
+  return s > c ? ";" : ",";
 }
-
 function parseDelimited(text, d) {
   const rows = []; let row = [], field = "", q = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (q) {
-      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
-      else field += ch;
-    } else if (ch === '"') q = true;
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; } else field += ch; }
+    else if (ch === '"') q = true;
     else if (ch === d) { row.push(field); field = ""; }
     else if (ch === "\n") { row.push(field); field = ""; rows.push(row); row = []; }
     else if (ch !== "\r") field += ch;
   }
   if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows.filter((r) => r.some((x) => String(x).trim() !== ""));
+  return rows.filter((x) => x.some((y) => String(y).trim() !== ""));
 }
 
-/* ---------------- column matching ---------------- */
 const ALIASES = {
   sbu:      ["sbu", "business unit", "businessunit", "unit", "brand", "product line"],
   channel:  ["channel", "media channel", "source", "platform"],
@@ -399,8 +460,6 @@ const ALIASES = {
              "start date", "start date in utc", "day start", "reporting starts", "date start"],
   keyword:  ["keyword", "search keyword", "keyword text", "search term", "search terms", "query"],
   match:    ["match type", "search keyword match type", "keyword match type", "search term match type"],
-  qs:       ["quality score", "qual score"],
-  cpc:      ["avg cpc", "average cpc", "avg cost per click"],
 };
 
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\u00ae|\u2122/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -408,196 +467,106 @@ const numOf = (s) => {
   const n = parseFloat(String(s == null ? "" : s).replace(/[$,%\s]/g, "").replace(/,/g, ""));
   return isFinite(n) ? n : 0;
 };
-
-/* Google Ads puts a title and a date range above the real header. */
+function weekBucket(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function findHeaderRow(rows) {
   const flat = Object.values(ALIASES).flat();
   let best = -1, bestScore = 0;
   for (let i = 0; i < Math.min(rows.length, 12); i++) {
-    const score = rows[i].filter((cell) => flat.includes(norm(cell))).length;
+    const score = rows[i].filter((c) => flat.includes(norm(c))).length;
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return bestScore >= 2 ? best : -1;
 }
-
 function matchKey(list, raw) {
   const v = norm(raw);
   if (!v) return null;
   const hit = list.find((x) => norm(x.key) === v || norm(x.name) === v);
   if (hit) return hit.key;
-  const partial = list.find((x) => norm(x.name).includes(v) || v.includes(norm(x.name)));
-  return partial ? partial.key : null;
+  const p = list.find((x) => norm(x.name).includes(v) || v.includes(norm(x.name)));
+  return p ? p.key : null;
 }
 const ruleMatch = (rules, text, field) => {
   const v = norm(text);
-  const hit = rules.find((r) => v.includes(norm(r.match)));
+  const hit = rules.find((x) => v.includes(norm(x.match)));
   return hit ? hit[field] : null;
 };
-
-/* Platforms export daily rows (LinkedIn, Meta) or weekly ones (Google).
-   Roll real dates up to the Monday of their week so both produce the
-   same 8-point trend. Non-date values pass through untouched. */
-function weekBucket(v) {
-  const raw = String(v || "").trim();
-  if (!raw) return "";
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 const isTotalRow = (name) => {
   const v = norm(name);
   return !v || v === "--" || v.startsWith("total") || v.startsWith("grand total");
 };
 
-function buildFromCSV(text, opts = {}) {
+/* Returns dated rows, not totals. */
+function parseFile(text, opts = {}) {
   const assign = opts.assign || {};
-  const rows = parseDelimited(text, detectDelim(text));
-  const h = findHeaderRow(rows);
+  const raw = parseDelimited(text, detectDelim(text));
+  const h = findHeaderRow(raw);
   if (h < 0) return { error: "Couldn't find a header row. Make sure the file still has its column titles." };
 
-  const header = rows[h].map(norm);
+  const header = raw[h].map(norm);
   const col = {};
   Object.entries(ALIASES).forEach(([f, names]) => { col[f] = header.findIndex((x) => names.includes(x)); });
   if (col.campaign < 0) return { error: "No campaign column found. The export needs a Campaign column." };
 
-  /* A keyword or search-term report enriches existing cells instead of
-     rebuilding them. Detected by the presence of a keyword column. */
-  if (col.keyword >= 0) return buildKeywords(rows, h, col, opts);
+  const isKw = col.keyword >= 0;
+  const out = [], unmapped = {}, weeks = new Set();
+  let used = 0, skippedEmpty = 0, skippedTotals = 0;
 
-  const groups = {}, unmapped = {};
-  const unresolvedChannel = new Set();
-  let used = 0, skippedEmpty = 0, skippedTotals = 0, skippedUnmapped = 0;
+  raw.slice(h + 1).forEach((rw) => {
+    const camp = String(rw[col.campaign] || "").trim();
+    const label = isKw
+      ? String(rw[col.keyword] || "").trim().replace(/^"+|"+$/g, "").replace(/^\[|\]$/g, "").trim()
+      : camp;
+    if (isTotalRow(label) || (isKw && isTotalRow(camp))) { skippedTotals++; return; }
 
-  rows.slice(h + 1).forEach((r) => {
-    const name = String(r[col.campaign] || "").trim();
-    if (isTotalRow(name)) { skippedTotals++; return; }
-
-    const spend  = col.spend  >= 0 ? numOf(r[col.spend])  : 0;
-    const leads  = col.leads  >= 0 ? numOf(r[col.leads])  : 0;
-    const reach  = col.reach  >= 0 ? numOf(r[col.reach])  : 0;
-    const clicks = col.clicks >= 0 ? numOf(r[col.clicks]) : 0;
+    const spend  = col.spend  >= 0 ? numOf(rw[col.spend])  : 0;
+    const leads  = col.leads  >= 0 ? numOf(rw[col.leads])  : 0;
+    const reach  = col.reach  >= 0 ? numOf(rw[col.reach])  : 0;
+    const clicks = col.clicks >= 0 ? numOf(rw[col.clicks]) : 0;
     if (!spend && !leads && !reach && !clicks) { skippedEmpty++; return; }
 
-    let sKey = col.sbu >= 0 ? matchKey(SBUS, r[col.sbu]) : null;
-    if (!sKey) sKey = ruleMatch(CAMPAIGN_RULES, name, "sbu");
-    if (!sKey) sKey = assign[name] || null;
+    let s = col.sbu >= 0 ? matchKey(SBUS, rw[col.sbu]) : null;
+    if (!s) s = ruleMatch(CAMPAIGN_RULES, camp, "sbu");
+    if (!s) s = assign[camp] || null;
 
-    let chKey = opts.channel || null;
-    if (!chKey) chKey = col.channel >= 0 ? matchKey(CHANNELS, r[col.channel]) : null;
-    if (!chKey && col.type >= 0) chKey = ruleMatch(TYPE_RULES, r[col.type], "channel");
-    if (!chKey) chKey = "google";
+    let ch = opts.channel || null;
+    if (!ch) ch = col.channel >= 0 ? matchKey(CHANNELS, rw[col.channel]) : null;
+    if (!ch && col.type >= 0) ch = ruleMatch(TYPE_RULES, rw[col.type], "channel");
+    if (!ch) ch = "google";
 
-    if (!sKey) {
-      const u = (unmapped[name] = unmapped[name] || { name, spend: 0, leads: 0 });
-      u.spend += spend; u.leads += leads;
-      skippedUnmapped++; return;
-    }
-    if (!chKey) { unresolvedChannel.add(String(r[col.channel] ?? r[col.type] ?? "").trim()); skippedUnmapped++; return; }
-
-    const key = `${sKey}|${chKey}`;
-    const g = (groups[key] = groups[key] || { camps: {}, weeks: {} });
-    const k = (g.camps[name] = g.camps[name] || { name, status: "live", spend: 0, leads: 0, reach: 0, clicks: 0 });
-    k.spend += spend; k.leads += leads; k.reach += reach; k.clicks += clicks;
-
-    if (col.week >= 0) {
-      const w = weekBucket(r[col.week]);
-      if (w) g.weeks[w] = (g.weeks[w] || 0) + leads;
-    }
-    used++;
-  });
-
-  const cells = {};
-  Object.entries(groups).forEach(([key, g]) => {
-    const cell = { campaigns: Object.values(g.camps).map((k) => ({ ...k, leads: Math.round(k.leads) })) };
-    const wk = Object.keys(g.weeks).sort();
-    if (wk.length >= 3) {
-      const series = wk.map((w) => Math.round(g.weeks[w])).slice(-8);
-      const volume = series.reduce((a, b) => a + b, 0);
-      /* A sparkline off three conversions is decoration, not signal. */
-      if (volume >= 8) {
-        cell.trend = series;
-        const half = Math.floor(series.length / 2);
-        const prior = series.slice(0, half).reduce((a, b) => a + b, 0);
-        const recent = series.slice(half).reduce((a, b) => a + b, 0);
-        if (prior >= 5) cell.delta = (recent - prior) / prior;
-      }
-    }
-    cells[key] = cell;
-  });
-
-  const unmappedList = Object.values(unmapped).sort((a, b) => b.spend - a.spend || b.leads - a.leads);
-
-  return {
-    kind: "campaigns", cells, unmapped: unmappedList,
-    stats: {
-      used, skippedEmpty, skippedTotals, skippedUnmapped,
-      cells: Object.keys(cells).length,
-      campaigns: Object.values(cells).reduce((a, x) => a + x.campaigns.length, 0),
-      hasTrend: Object.values(cells).some((x) => x.trend),
-      unresolvedChannel: [...unresolvedChannel].filter(Boolean).slice(0, 8),
-    },
-  };
-}
-
-function buildKeywords(rows, h, col, opts = {}) {
-  const assign = opts.assign || {};
-  const groups = {}, unmapped = {};
-  let used = 0, skipped = 0;
-
-  rows.slice(h + 1).forEach((r) => {
-    const text = String(r[col.keyword] || "").trim().replace(/^"+|"+$/g, "").replace(/^\[|\]$/g, "").trim();
-    const camp = String(r[col.campaign] || "").trim();
-    if (!text || isTotalRow(text) || isTotalRow(camp)) { skipped++; return; }
-
-    const spend  = col.spend  >= 0 ? numOf(r[col.spend])  : 0;
-    const leads  = col.leads  >= 0 ? numOf(r[col.leads])  : 0;
-    const reach  = col.reach  >= 0 ? numOf(r[col.reach])  : 0;
-    const clicks = col.clicks >= 0 ? numOf(r[col.clicks]) : 0;
-    if (!spend && !leads && !reach && !clicks) { skipped++; return; }
-
-    let sKey = col.sbu >= 0 ? matchKey(SBUS, r[col.sbu]) : null;
-    if (!sKey) sKey = ruleMatch(CAMPAIGN_RULES, camp, "sbu");
-    if (!sKey) sKey = assign[camp] || null;
-    let chKey = opts.channel || null;
-    if (!chKey) chKey = col.channel >= 0 ? matchKey(CHANNELS, r[col.channel]) : null;
-    if (!chKey && col.type >= 0) chKey = ruleMatch(TYPE_RULES, r[col.type], "channel");
-    if (!chKey) chKey = "google";
-    if (!sKey) {
+    if (!s) {
       const u = (unmapped[camp] = unmapped[camp] || { name: camp, spend: 0, leads: 0 });
       u.spend += spend; u.leads += leads;
-      skipped++; return;
+      return;
     }
 
-    const key = `${sKey}|${chKey}`;
-    const g = (groups[key] = groups[key] || {});
-    const id = text.toLowerCase();
-    const k = (g[id] = g[id] || {
-      text, campaign: camp,
-      match: col.match >= 0 ? String(r[col.match] || "").trim() : "",
-      qs: col.qs >= 0 ? numOf(r[col.qs]) : 0,
-      spend: 0, leads: 0, reach: 0, clicks: 0,
-    });
-    k.spend += spend; k.leads += leads; k.reach += reach; k.clicks += clicks;
+    const week = col.week >= 0 ? weekBucket(rw[col.week]) : null;
+    if (week) weeks.add(week);
+    out.push(isKw
+      ? { s, ch, week, text: label, match: col.match >= 0 ? String(rw[col.match] || "").trim() : "", spend, leads: Math.round(leads), reach, clicks }
+      : { s, ch, week, name: label, spend, leads: Math.round(leads), reach, clicks });
     used++;
   });
 
-  const keywords = {};
-  Object.entries(groups).forEach(([key, g]) => {
-    keywords[key] = Object.values(g)
-      .map((k) => ({ ...k, leads: Math.round(k.leads) }))
-      .sort((a, b) => b.spend - a.spend);
-  });
+  if (!out.length) return { error: "No rows matched a business unit. Assign them below or add a rule to CAMPAIGN_RULES." };
 
+  const wk = [...weeks].sort();
   return {
-    kind: "keywords", keywords,
+    kind: isKw ? "keywords" : "campaigns",
+    rows: out,
     unmapped: Object.values(unmapped).sort((a, b) => b.spend - a.spend),
     stats: {
-      used, skipped,
-      cells: Object.keys(keywords).length,
-      keywords: Object.values(keywords).reduce((a, x) => a + x.length, 0),
-      unresolvedChannel: [],
+      used, skippedEmpty, skippedTotals,
+      items: new Set(out.map((x) => x.text || x.name)).size,
+      cells: new Set(out.map((x) => `${x.s}|${x.ch}`)).size,
+      weeks: wk.length,
+      span: wk.length ? `${prettyWeek(wk[0])} \u2013 ${prettyWeek(wk[wk.length - 1])}` : null,
     },
   };
 }
@@ -607,7 +576,6 @@ const TEMPLATE = [
   "reLink Ready,Google Ads,Ready Products - Rental,1620,40,6100,540,2026-07-06",
   "reLink Ready,Google Ads,Ready Products - Rental,1580,38,5900,520,2026-07-13",
   "Disposition,Paid Social,LinkedIn - IDN Decision Makers,2400,9,44000,610,2026-07-06",
-  "Net New,Email,Cold Sequence,0,14,9200,730,2026-07-06",
 ].join("\n");
 
 function download(filename, text, type = "text/csv;charset=utf-8") {
@@ -618,31 +586,9 @@ function download(filename, text, type = "text/csv;charset=utf-8") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 const csvCell = (v) => (/[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
-const toCSV = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\n");
+const toCSV = (rows) => rows.map((x) => x.map(csvCell).join(",")).join("\n");
 
-/* ---------------- derived ---------------- */
-const statusOf = (cell) => (!cell ? "none" : cell.campaigns ? "live" : cell.status || "none");
-function totals(cell) {
-  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, count: 0 };
-  if (!cell || !cell.campaigns) return t;
-  cell.campaigns.forEach((k) => { t.spend += k.spend; t.leads += k.leads; t.reach += k.reach; t.clicks += k.clicks; t.count++; });
-  return t;
-}
-const cpl = (spend, leads) => (leads > 0 && spend > 0 ? spend / leads : null);
-const money = (n) => (n >= 10000 ? "$" + (n / 1000).toFixed(1) + "k" : "$" + Math.round(n).toLocaleString());
-const moneyFull = (n) => "$" + Math.round(n).toLocaleString();
-const num = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + "M" : n >= 10000 ? Math.round(n / 1000) + "k" : Math.round(n).toLocaleString());
-const pct = (d) => (d > 0 ? "+" : "") + Math.round(d * 100) + "%";
-const today = () => new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-
-function metricValue(key, t) {
-  if (key === "leads") return { text: t.leads.toLocaleString(), unit: "leads" };
-  if (key === "spend") return { text: t.spend ? money(t.spend) : "$0", unit: "spend" };
-  const x = cpl(t.spend, t.leads);
-  return { text: x ? "$" + Math.round(x) : "\u2014", unit: "per lead" };
-}
-
-/* ---------------- pieces ---------------- */
+/* ---------------- small pieces ---------------- */
 function Spark({ data, color }) {
   if (!data || data.length < 2) return null;
   const w = 100, h = 26, min = Math.min(...data), max = Math.max(...data), span = max - min || 1;
@@ -655,7 +601,6 @@ function Spark({ data, color }) {
     </svg>
   );
 }
-
 const Kpi = ({ label, value, sub }) => (
   <div className="mg-kpi">
     <span className="mg-kpi-label">{label}</span>
@@ -663,7 +608,6 @@ const Kpi = ({ label, value, sub }) => (
     {sub && <span className="mg-kpi-sub">{sub}</span>}
   </div>
 );
-
 function TrendChart({ data, color }) {
   if (!data) return null;
   const max = Math.max(...data);
@@ -681,7 +625,84 @@ function TrendChart({ data, color }) {
   );
 }
 
-/* ---------------- import modal ---------------- */
+/* ---------------- date range control ---------------- */
+function RangeBar({ weeks, from, to, preset, onPreset, onCustom, undated, filtering }) {
+  if (!weeks.length) return null;
+  const first = weeks[0], last = weeks[weeks.length - 1];
+  return (
+    <div className="mg-range">
+      <span className="mg-range-label">Date range</span>
+      <div className="mg-range-pills">
+        {PRESETS.filter((p) => !p.weeks || p.weeks <= weeks.length + 4).map((p) => (
+          <button key={p.key} className={"mg-mpill" + (preset === p.key ? " is-on" : "")} onClick={() => onPreset(p.key)} aria-pressed={preset === p.key}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="mg-range-dates">
+        <input type="date" value={from || first} min={first} max={last}
+          onChange={(e) => onCustom(e.target.value, to || last)} aria-label="From week" />
+        <span className="mg-range-dash">&ndash;</span>
+        <input type="date" value={to || last} min={first} max={last}
+          onChange={(e) => onCustom(from || first, e.target.value)} aria-label="To week" />
+      </div>
+      <span className="mg-range-note">
+        {weeks.length} week{weeks.length === 1 ? "" : "s"} of dated data
+        {undated > 0 && (filtering
+          ? ` \u00b7 ${undated.toLocaleString()} undated rows hidden`
+          : ` \u00b7 ${undated.toLocaleString()} undated rows included`)}
+      </span>
+    </div>
+  );
+}
+
+/* ---------------- publish ---------------- */
+function PublishModal({ onClose, onDone, data, snapshots }) {
+  const [key, setKey] = useState("");
+  const [by, setBy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const go = async () => {
+    setBusy(true); setError(null);
+    try {
+      const out = await saveRemote({ key, by, rows: data.rows, keywords: data.keywords, period: data.period });
+      onDone({ savedAt: new Date().toISOString(), by }, out);
+    } catch (e) { setError(e.message || "Save failed."); setBusy(false); }
+  };
+  return (
+    <div className="mg-modal-wrap" onClick={onClose}>
+      <div className="mg-modal is-narrow" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Publish to the team">
+        <button className="mg-modal-x" onClick={onClose} aria-label="Close">&times;</button>
+        <p className="mg-dr-crumb">Publish</p>
+        <h2 className="mg-modal-title">Save this to the team</h2>
+        <p className="mg-modal-sub">
+          Everyone opening the grid sees this next. Rows carry their own dates, so
+          each publish extends the range people can filter by.
+        </p>
+        <label className="mg-field">
+          <span>Your name <i>optional</i></span>
+          <input type="text" value={by} placeholder="Joe" onChange={(e) => setBy(e.target.value)} />
+        </label>
+        <label className="mg-field">
+          <span>Write passphrase</span>
+          <input type="password" value={key} placeholder="Required to publish" onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && key && !busy) go(); }} />
+        </label>
+        {error && <div className="mg-alert is-bad">{error}</div>}
+        <p className="mg-modal-fine">
+          {data.rows.length.toLocaleString()} campaign rows and {data.keywords.length.toLocaleString()} keyword rows.
+          {snapshots > 0 && ` ${snapshots} save${snapshots === 1 ? "" : "s"} so far.`}
+        </p>
+        <div className="mg-modal-actions">
+          <button className="mg-btn is-ghost" onClick={onClose}>Cancel</button>
+          <button className="mg-btn" disabled={!key || busy} onClick={go}>{busy ? "Saving\u2026" : "Publish"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- import ---------------- */
 function ImportModal({ onClose, onApply, onReset, imported }) {
   const [text, setText] = useState(null);
   const [error, setError] = useState(null);
@@ -689,14 +710,13 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
   const [drag, setDrag] = useState(false);
   const [channel, setChannel] = useState("");
   const [assign, setAssign] = useState({});
+  const [mode, setMode] = useState("merge");
   const inputRef = useRef(null);
 
   const result = useMemo(() => {
     if (!text) return null;
-    try {
-      const out = buildFromCSV(text, { channel: channel || null, assign });
-      return out.error ? null : out;
-    } catch (e) { return null; }
+    try { const out = parseFile(text, { channel: channel || null, assign }); return out.error ? null : out; }
+    catch (e) { return null; }
   }, [text, channel, assign]);
 
   const handleFile = (file) => {
@@ -706,16 +726,13 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
     reader.onload = () => {
       try {
         const decoded = decodeBuffer(reader.result);
-        const probe = buildFromCSV(decoded);
+        const probe = parseFile(decoded);
         if (probe.error) { setError(probe.error); return; }
-        const guess = /linked ?in/i.test(file.name) ? "social"
+        setChannel(/linked ?in/i.test(file.name) ? "social"
           : /facebook|meta|instagram/i.test(file.name) ? "social"
-          : /sfmc|email|journey|send/i.test(file.name) ? "email" : "";
-        setChannel(guess);
+          : /sfmc|journey|send/i.test(file.name) ? "email" : "");
         setText(decoded);
-      } catch (e) {
-        setError("That file couldn't be read. Try re-downloading it from the ad platform.");
-      }
+      } catch (e) { setError("That file couldn't be read. Try re-downloading it from the platform."); }
     };
     reader.onerror = () => setError("That file couldn't be read. Try re-downloading it.");
     reader.readAsArrayBuffer(file);
@@ -731,49 +748,37 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
         <p className="mg-dr-crumb">Data</p>
         <h2 className="mg-modal-title">Import campaign data</h2>
         <p className="mg-modal-sub">
-          Drop the raw export straight from Google Ads, LinkedIn, or SFMC. No cleanup needed &mdash;
-          title rows, tab separation, and UTF-16 all get handled, and business units are read
-          off the campaign name. A keyword or search-terms report is recognized on its own and
-          layered onto the campaigns already here.
+          Drop the raw export from Google Ads, LinkedIn or SFMC. Title rows, tab separation
+          and UTF-16 are handled. Segment the export by week and the rows arrive dated,
+          which is what makes the date filter work.
         </p>
 
-        <div
-          className={"mg-drop" + (drag ? " is-over" : "")}
+        <div className={"mg-drop" + (drag ? " is-over" : "")}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
-          onClick={() => inputRef.current?.click()}
-        >
+          onClick={() => inputRef.current?.click()}>
           <input ref={inputRef} type="file" accept=".csv,.tsv,.txt,text/csv" hidden onChange={(e) => handleFile(e.target.files[0])} />
           <p className="mg-drop-main">{filename || "Drop a file here, or choose one"}</p>
-          <p className="mg-drop-sub">Segment by week in the export if you want trend lines</p>
+          <p className="mg-drop-sub">Campaign reports and keyword reports both work</p>
         </div>
 
         {error && <div className="mg-alert is-bad">{error}</div>}
 
         {result && (
           <div className="mg-alert is-good">
-            {result.kind === "keywords" ? (
-              <>
-                <strong>Keyword report: {result.stats.keywords} keywords across {result.stats.cells} cells.</strong>
-                <span>{result.stats.used} rows used. These get added to the campaigns already in the grid, not swapped in for them.</span>
-              </>
-            ) : (
-              <>
-                <strong>{result.stats.campaigns} campaigns across {result.stats.cells} cells.</strong>
-                <span>
-                  {result.stats.used} rows used.
-                  {result.stats.skippedEmpty > 0 && ` ${result.stats.skippedEmpty} with no activity skipped.`}
-                  {result.stats.skippedTotals > 0 && ` ${result.stats.skippedTotals} total rows skipped.`}
-                  {result.stats.hasTrend ? " Weekly trends detected." : " No week column, so no trend lines."}
-                </span>
-              </>
-            )}
-            {unmapped.length > 0 && (
-              <span className="mg-alert-warn">
-                {unmapped.length} campaign{unmapped.length === 1 ? "" : "s"} still unassigned &mdash; see below.
-              </span>
-            )}
+            <strong>
+              {result.kind === "keywords" ? "Keyword report: " : ""}
+              {result.stats.items.toLocaleString()} {result.kind === "keywords" ? "keywords" : "campaigns"} across {result.stats.cells} cells.
+            </strong>
+            <span>
+              {result.stats.used.toLocaleString()} rows used.
+              {result.stats.skippedEmpty > 0 && ` ${result.stats.skippedEmpty.toLocaleString()} with no activity skipped.`}
+              {result.stats.weeks > 0
+                ? ` Dated: ${result.stats.weeks} weeks, ${result.stats.span}.`
+                : " No date column, so these rows can't be filtered by range."}
+            </span>
+            {unmapped.length > 0 && <span className="mg-alert-warn">{unmapped.length} campaign{unmapped.length === 1 ? "" : "s"} still unassigned &mdash; see below.</span>}
           </div>
         )}
 
@@ -782,18 +787,17 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
             <h3 className="mg-dr-h3">Channel</h3>
             <div className="mg-chsel">
               {[{ key: "", name: "Auto-detect" }, ...CHANNELS].map((ch) => (
-                <button
-                  key={ch.key || "auto"}
-                  className={"mg-chpill" + (channel === ch.key ? " is-on" : "")}
-                  onClick={() => setChannel(ch.key)}
-                >
-                  {ch.name}
-                </button>
+                <button key={ch.key || "auto"} className={"mg-chpill" + (channel === ch.key ? " is-on" : "")} onClick={() => setChannel(ch.key)}>{ch.name}</button>
               ))}
             </div>
+            <h3 className="mg-dr-h3">Add or replace</h3>
+            <div className="mg-chsel">
+              <button className={"mg-chpill" + (mode === "merge" ? " is-on" : "")} onClick={() => setMode("merge")}>Add to what&rsquo;s here</button>
+              <button className={"mg-chpill" + (mode === "replace" ? " is-on" : "")} onClick={() => setMode("replace")}>Replace everything</button>
+            </div>
             <p className="mg-modal-fine">
-              Google exports carry a campaign type, so auto-detect works. LinkedIn, Meta and
-              SFMC don&rsquo;t &mdash; pick the row those campaigns belong in.
+              Adding keeps other channels intact and overwrites only the weeks this file covers.
+              Replacing wipes the grid and starts from this file alone.
             </p>
           </>
         )}
@@ -802,22 +806,15 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
           <>
             <h3 className="mg-dr-h3">Assign {unmapped.length} unmatched campaign{unmapped.length === 1 ? "" : "s"}</h3>
             <p className="mg-modal-fine">
-              No naming rule matched these. Assign them here to import them now, or add a line to
-              CAMPAIGN_RULES so future imports handle them on their own.
+              No naming rule matched these. Assign them here, or add a line to CAMPAIGN_RULES so
+              future imports handle them on their own.
               {unmappedSpend > 0 && ` ${moneyFull(unmappedSpend)} is sitting in this list.`}
             </p>
             <div className="mg-assign">
               {unmapped.slice(0, 30).map((u) => (
                 <div className="mg-assign-row" key={u.name}>
-                  <span className="mg-assign-name">
-                    {u.name}
-                    <i>{u.spend ? moneyFull(u.spend) : "no spend"} &middot; {Math.round(u.leads)} leads</i>
-                  </span>
-                  <select
-                    className="mg-assign-sel"
-                    value={assign[u.name] || ""}
-                    onChange={(e) => setAssign((a) => ({ ...a, [u.name]: e.target.value }))}
-                  >
+                  <span className="mg-assign-name">{u.name}<i>{u.spend ? moneyFull(u.spend) : "no spend"} &middot; {Math.round(u.leads)} leads</i></span>
+                  <select className="mg-assign-sel" value={assign[u.name] || ""} onChange={(e) => setAssign((a) => ({ ...a, [u.name]: e.target.value }))}>
                     <option value="">Skip</option>
                     {SBUS.map((sb) => <option key={sb.key} value={sb.key}>{sb.name}</option>)}
                   </select>
@@ -828,89 +825,11 @@ function ImportModal({ onClose, onApply, onReset, imported }) {
           </>
         )}
 
-        <h3 className="mg-dr-h3">How it maps</h3>
-        <table className="mg-table mg-table-tight">
-          <thead><tr><th>Field</th><th>Where it comes from</th></tr></thead>
-          <tbody>
-            <tr><td>campaign</td><td>Campaign column. Required.</td></tr>
-            <tr><td>business unit</td><td>An sbu column, CAMPAIGN_RULES, or assigned above</td></tr>
-            <tr><td>channel</td><td>A channel column, Campaign type, or picked above</td></tr>
-            <tr><td>spend</td><td>Cost, Spend, or Budget spent</td></tr>
-            <tr><td>leads</td><td>Conversions, Leads, or Form fills</td></tr>
-            <tr><td>reach</td><td>Impr., Impressions, Sends, or Touches</td></tr>
-            <tr><td>clicks</td><td>Clicks or Interactions</td></tr>
-            <tr><td>week</td><td>Week, Date, or Day. Optional, drives trends.</td></tr>
-          </tbody>
-        </table>
-        <p className="mg-modal-fine">
-          Rows with no spend, leads, impressions or clicks are dropped, so paused and
-          retired campaigns disappear on their own. Repeated campaign names are summed.
-        </p>
-
         <div className="mg-modal-actions">
           <button className="mg-btn is-ghost" onClick={() => download("mosaic-grid-template.csv", TEMPLATE)}>Download template</button>
-          {imported && <button className="mg-btn is-ghost" onClick={onReset}>Back to Google Ads data</button>}
-          <button className="mg-btn" disabled={!result} onClick={() => result && onApply(result, filename)}>
-            {result?.kind === "keywords" ? "Add keywords" : "Use this data"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- publish dialog ---------------- */
-function PublishModal({ onClose, onDone, cells, period, snapshots }) {
-  const [key, setKey] = useState("");
-  const [by, setBy] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-
-  const go = async () => {
-    setBusy(true); setError(null);
-    try {
-      const out = await saveRemote({ key, by, date, period, cells });
-      onDone({ date: out.date, savedAt: new Date().toISOString(), by }, out.snapshots);
-    } catch (e) {
-      setError(e.message || "Save failed.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="mg-modal-wrap" onClick={onClose}>
-      <div className="mg-modal is-narrow" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Publish to the team">
-        <button className="mg-modal-x" onClick={onClose} aria-label="Close">&times;</button>
-        <p className="mg-dr-crumb">Publish</p>
-        <h2 className="mg-modal-title">Save this to the team</h2>
-        <p className="mg-modal-sub">
-          Everyone opening the grid sees this next. The previous week stays stored, and
-          each save adds another point to every trend line.
-        </p>
-
-        <label className="mg-field">
-          <span>Week of</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label className="mg-field">
-          <span>Your name <i>optional</i></span>
-          <input type="text" value={by} placeholder="Joe" onChange={(e) => setBy(e.target.value)} />
-        </label>
-        <label className="mg-field">
-          <span>Write passphrase</span>
-          <input type="password" value={key} placeholder="Required to publish"
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && key && !busy) go(); }} />
-        </label>
-
-        {error && <div className="mg-alert is-bad">{error}</div>}
-        {snapshots > 0 && <p className="mg-modal-fine">{snapshots} week{snapshots === 1 ? "" : "s"} stored so far.</p>}
-
-        <div className="mg-modal-actions">
-          <button className="mg-btn is-ghost" onClick={onClose}>Cancel</button>
-          <button className="mg-btn" disabled={!key || busy} onClick={go}>
-            {busy ? "Saving\u2026" : "Publish"}
+          {imported && <button className="mg-btn is-ghost" onClick={onReset}>Back to seeded data</button>}
+          <button className="mg-btn" disabled={!result} onClick={() => result && onApply(result, filename, mode)}>
+            {mode === "replace" ? "Replace data" : "Add to grid"}
           </button>
         </div>
       </div>
@@ -920,34 +839,34 @@ function PublishModal({ onClose, onDone, cells, period, snapshots }) {
 
 /* ---------------- app ---------------- */
 export default function App() {
-  const [cells, setCells] = useState(SEED);
-  const [source, setSource] = useState(null);
-  const [index, setIndex] = useState([]);
-  const [meta, setMeta] = useState(null);      // last saved snapshot info
-  const [online, setOnline] = useState(null);  // null = checking
-  const [dirty, setDirty] = useState(false);   // imported but not published
-  const [showPublish, setShowPublish] = useState(false);
+  const [data, setData] = useState(SEED);
+  const [dirty, setDirty] = useState(false);
+  const [meta, setMeta] = useState(null);
+  const [online, setOnline] = useState(null);
+  const [saves, setSaves] = useState(0);
   const [showImport, setShowImport] = useState(false);
+  const [showPublish, setShowPublish] = useState(false);
   const [sel, setSel] = useState(null);
   const [metric, setMetric] = useState("leads");
   const [gapsOnly, setGapsOnly] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [preset, setPreset] = useState("all");
+  const [custom, setCustom] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let dead = false;
     loadRemote()
       .then((out) => {
-        if (cancelled) return;
+        if (dead) return;
         setOnline(true);
-        setIndex(out.index || []);
-        if (out.snapshot?.cells && Object.keys(out.snapshot.cells).length) {
-          setCells(out.snapshot.cells);
-          setMeta({ date: out.snapshot.date, savedAt: out.snapshot.savedAt, by: out.snapshot.by });
-          if (out.snapshot.period) setSource(out.snapshot.period);
+        setSaves(out.saves || 0);
+        if (out.data?.rows?.length) {
+          setData({ rows: out.data.rows, keywords: out.data.keywords || [], period: out.data.period || "" });
+          setMeta({ savedAt: out.data.savedAt, by: out.data.by });
         }
       })
-      .catch(() => { if (!cancelled) setOnline(false); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!dead) setOnline(false); });
+    return () => { dead = true; };
   }, []);
 
   useEffect(() => {
@@ -958,31 +877,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { setSel(null); setShowImport(false); } };
+    const onKey = (e) => { if (e.key === "Escape") { setSel(null); setShowImport(false); setShowPublish(false); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const get = (s, ch) => cells[`${s}|${ch}`] || null;
-  const period = source || DEFAULT_PERIOD;
+  const weeks = useMemo(() => weeksIn(data), [data]);
+  const undated = useMemo(() => undatedCount(data), [data]);
 
-  const trendFor = (sKey, chKey, cell) => {
-    if (cell?.trend) return { trend: cell.trend, delta: cell.delta };
-    const h = historyTrend(index, `${sKey}|${chKey}`);
-    return h ? { ...h, fromHistory: true } : { trend: null, delta: undefined };
-  };
+  const [from, to] = useMemo(() => {
+    if (!weeks.length) return [null, null];
+    if (custom) return [custom.from, custom.to];
+    const p = PRESETS.find((x) => x.key === preset);
+    if (!p || !p.weeks) return [null, null];
+    return [weeks[Math.max(0, weeks.length - p.weeks)], weeks[weeks.length - 1]];
+  }, [weeks, preset, custom]);
+
+  const filtering = Boolean(from);
+  const cells = useMemo(() => aggregate(data, from, to), [data, from, to]);
+  const get = (s, ch) => cells[`${s}|${ch}`] || null;
+  const period = filtering ? prettyRange(from, to) : data.period || "All time";
 
   const roll = useMemo(() => {
     const bySbu = {}, byChannel = {}, all = { spend: 0, leads: 0, count: 0, gaps: 0 };
     SBUS.forEach((s) => (bySbu[s.key] = { spend: 0, leads: 0, count: 0, liveChannels: 0 }));
     CHANNELS.forEach((ch) => (byChannel[ch.key] = { spend: 0, leads: 0, count: 0, liveSbus: 0 }));
     SBUS.forEach((s) => CHANNELS.forEach((ch) => {
-      const cell = cells[`${s.key}|${ch.key}`] || null;
-      const t = totals(cell), live = statusOf(cell) === "live";
-      if (!live) all.gaps++;
+      const cell = cells[`${s.key}|${ch.key}`] || null, t = totals(cell);
+      if (!cell) all.gaps++;
       bySbu[s.key].spend += t.spend; bySbu[s.key].leads += t.leads; bySbu[s.key].count += t.count;
       byChannel[ch.key].spend += t.spend; byChannel[ch.key].leads += t.leads; byChannel[ch.key].count += t.count;
-      if (live) { bySbu[s.key].liveChannels++; byChannel[ch.key].liveSbus++; }
+      if (cell) { bySbu[s.key].liveChannels++; byChannel[ch.key].liveSbus++; }
       all.spend += t.spend; all.leads += t.leads; all.count += t.count;
     }));
     return { bySbu, byChannel, all };
@@ -994,79 +919,72 @@ export default function App() {
     if (!sel) return null;
     if (sel.type === "cell") {
       const s = SBUS.find((x) => x.key === sel.s), ch = CHANNELS.find((x) => x.key === sel.ch);
-      const cell = get(s.key, ch.key), st = statusOf(cell), t = totals(cell);
-      return { kind: "cell", s, ch, cell, st, t, color: STATUS[st].color, period: cell?.period,
+      const key = `${s.key}|${ch.key}`, cell = cells[key] || null, st = statusOf(cell, key);
+      return { kind: "cell", s, ch, cell, st, key, t: totals(cell), color: STATUS[st].color,
         crumb: `${s.name} / ${ch.name}`, title: ch.name, sub: s.name, file: `mosaic-${s.key}-${ch.key}` };
     }
     if (sel.type === "sbu") {
       const s = SBUS.find((x) => x.key === sel.s);
-      return { kind: "sbu", s, r: roll.bySbu[s.key], color: "#F38637",
-        crumb: "Business unit", title: s.name, sub: s.owner, file: `mosaic-${s.key}` };
+      return { kind: "sbu", s, r: roll.bySbu[s.key], color: "#F38637", crumb: "Business unit", title: s.name, sub: s.owner, file: `mosaic-${s.key}` };
     }
     const ch = CHANNELS.find((x) => x.key === sel.ch);
-    return { kind: "channel", ch, r: roll.byChannel[ch.key], color: "#0598A6",
-      crumb: "Channel", title: ch.name, sub: ch.note, file: `mosaic-${ch.key}` };
+    return { kind: "channel", ch, r: roll.byChannel[ch.key], color: "#0598A6", crumb: "Channel", title: ch.name, sub: ch.note, file: `mosaic-${ch.key}` };
   }, [sel, cells, roll]);
 
   const exportCSV = () => {
     if (!view) return;
     let rows;
     if (view.kind === "cell") {
-      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Campaign", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks"]];
+      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks", "Range"]];
       (view.cell?.campaigns || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
-        rows.push([view.s.name, view.ch.name, "Campaign", k.name, "", "", k.spend, k.leads, x ? Math.round(x) : "", k.reach, k.clicks]);
+        rows.push([view.s.name, view.ch.name, "Campaign", k.name, "", Math.round(k.spend), k.leads, x ? Math.round(x) : "", Math.round(k.reach), Math.round(k.clicks), period]);
       });
       (view.cell?.keywords || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
-        rows.push([view.s.name, view.ch.name, "Keyword", k.text, k.match, k.campaign, k.spend, k.leads, x ? Math.round(x) : "", k.reach, k.clicks]);
-      });
-    } else if (view.kind === "sbu") {
-      rows = [["Business unit", "Channel", "Status", "Campaigns", "Spend", "Leads", "Cost per lead"]];
-      CHANNELS.forEach((ch) => {
-        const t = totals(get(view.s.key, ch.key)), x = cpl(t.spend, t.leads);
-        rows.push([view.s.name, ch.name, STATUS[statusOf(get(view.s.key, ch.key))].label, t.count, t.spend, t.leads, x ? Math.round(x) : ""]);
+        rows.push([view.s.name, view.ch.name, "Keyword", k.text, k.match, Math.round(k.spend), k.leads, x ? Math.round(x) : "", Math.round(k.reach), Math.round(k.clicks), period]);
       });
     } else {
-      rows = [["Channel", "Business unit", "Status", "Campaigns", "Spend", "Leads", "Cost per lead"]];
-      SBUS.forEach((s) => {
-        const t = totals(get(s.key, view.ch.key)), x = cpl(t.spend, t.leads);
-        rows.push([view.ch.name, s.name, STATUS[statusOf(get(s.key, view.ch.key))].label, t.count, t.spend, t.leads, x ? Math.round(x) : ""]);
+      const isSbu = view.kind === "sbu", list = isSbu ? CHANNELS : SBUS;
+      rows = [[isSbu ? "Business unit" : "Channel", isSbu ? "Channel" : "Business unit", "Campaigns", "Spend", "Leads", "Cost per lead", "Range"]];
+      list.forEach((item) => {
+        const key = isSbu ? `${view.s.key}|${item.key}` : `${item.key}|${view.ch.key}`;
+        const t = totals(cells[key]), x = cpl(t.spend, t.leads);
+        rows.push([view.title, item.name, t.count, Math.round(t.spend), t.leads, x ? Math.round(x) : "", period]);
       });
     }
     download(view.file + ".csv", toCSV(rows));
   };
 
   const Cell = ({ s, ch }) => {
-    const cell = get(s.key, ch.key), st = statusOf(cell), t = totals(cell);
-    const isLive = st === "live";
+    const key = `${s.key}|${ch.key}`, cell = cells[key] || null;
+    const st = statusOf(cell, key), t = totals(cell);
     const isSel = sel?.type === "cell" && sel.s === s.key && sel.ch === ch.key;
     const m = metricValue(metric, t);
-    const tr = trendFor(s.key, ch.key, cell);
-    const up = (tr.delta ?? 0) >= 0;
+    const up = (cell?.delta ?? 0) >= 0;
     const trendColor = up ? "#90AD51" : "#F38637";
     return (
       <button
-        className={"mg-cell" + (isLive ? "" : " is-quiet") + (st === "none" ? " is-gap" : "") + (isSel ? " is-sel" : "") + (gapsOnly && isLive ? " is-dim" : "")}
+        className={"mg-cell" + (cell ? "" : " is-quiet") + (st === "none" ? " is-gap" : "") + (isSel ? " is-sel" : "") + (gapsOnly && cell ? " is-dim" : "")}
         style={{ "--c": STATUS[st].color }}
         onClick={() => setSel(isSel ? null : { type: "cell", s: s.key, ch: ch.key })}
-        aria-label={`${s.name}, ${ch.name}: ${isLive ? `${t.leads} leads, ${moneyFull(t.spend)} spend` : STATUS[st].label}`}
+        aria-label={`${s.name}, ${ch.name}: ${cell ? `${t.leads} leads, ${moneyFull(t.spend)} spend` : STATUS[st].label}`}
       >
-        {isLive ? (
+        {cell ? (
           <>
             <span className="mg-cell-top"><span className="mg-dot" /><span className="mg-cell-count">{t.count} {t.count === 1 ? "campaign" : "campaigns"}</span></span>
             <span className="mg-cell-metric"><b>{m.text}</b><i>{m.unit}</i></span>
             <span className="mg-cell-row">
               <span className="mg-cell-spend">{ch.paid ? money(t.spend) : num(t.reach) + " " + ch.reach.toLowerCase()}</span>
-              {cell.period && <span className="mg-period-flag" title={cell.period}>different window</span>}
-              {tr.delta !== undefined && <span className="mg-delta" style={{ color: trendColor }}>{up ? "\u25B2" : "\u25BC"} {pct(tr.delta).replace("+", "")}</span>}
+              {cell.delta !== undefined && <span className="mg-delta" style={{ color: trendColor }}>{up ? "\u25B2" : "\u25BC"} {pct(cell.delta).replace("+", "")}</span>}
+              {!cell.dated && <span className="mg-period-flag" title="Undated rows — not affected by the date filter">undated</span>}
             </span>
-            <Spark data={tr.trend} color={trendColor} />
+            <Spark data={cell.trend} color={trendColor} />
           </>
         ) : st === "none" ? <span className="mg-gap-mark">&mdash;</span> : (
           <>
             <span className="mg-cell-top"><span className="mg-dot" /><span className="mg-cell-count">{STATUS[st].label}</span></span>
-            <span className="mg-quiet-note">{cell.note}</span>
+            <span className="mg-quiet-note">{NO_DATA[key]}</span>
           </>
         )}
       </button>
@@ -1076,37 +994,31 @@ export default function App() {
   function Report({ print }) {
     if (!view) return null;
     if (view.kind === "cell") {
-      const { s, ch, cell, st, t, color } = view;
-      const tr = trendFor(s.key, ch.key, cell);
+      const { s, ch, cell, st, t, color, key } = view;
       const x = cpl(t.spend, t.leads);
       const ctr = t.reach ? (t.clicks / t.reach) * 100 : null;
-      if (st !== "live")
+      if (!cell)
         return (
           <div className="mg-dr-empty">
-            <p>{cell?.note || `Nothing imported for ${s.name} on ${ch.name} yet.`}</p>
-            <p className="mg-dr-empty-sub">Import a file with rows for this pair, or add <code>"{s.key}|{ch.key}"</code> to SEED.</p>
+            <p>{NO_DATA[key] || `Nothing for ${s.name} on ${ch.name} in this range.`}</p>
+            <p className="mg-dr-empty-sub">{filtering ? "Widen the date range, or import a file covering these weeks." : "Import a file with rows for this pair."}</p>
           </div>
         );
       return (
         <>
           <div className="mg-kpis">
-            <Kpi label="Leads" value={t.leads.toLocaleString()} sub={tr.delta !== undefined ? pct(tr.delta) + " vs prior period" : null} />
+            <Kpi label="Leads" value={t.leads.toLocaleString()} sub={cell.delta !== undefined ? pct(cell.delta) + " vs prior weeks" : null} />
             <Kpi label="Spend" value={t.spend ? moneyFull(t.spend) : "\u2014"} sub={ch.paid ? "paid media" : "no media cost"} />
             <Kpi label="Cost per lead" value={x ? "$" + Math.round(x) : "\u2014"} sub={x ? null : "owned channel"} />
             <Kpi label={ch.reach} value={num(t.reach)} sub={ctr ? ctr.toFixed(2) + "% click rate" : null} />
           </div>
-          {tr.trend && (
-            <>
-              <h3 className="mg-dr-h3">Leads by week</h3>
-              <TrendChart data={tr.trend} color={color} />
-              {tr.fromHistory && <p className="mg-note">Built from {index.length} saved weeks, not from the export.</p>}
-            </>
-          )}
+          {cell.trend && (<><h3 className="mg-dr-h3">Leads by week</h3><TrendChart data={cell.trend} color={color} /></>)}
+          {!cell.dated && <p className="mg-note">These rows carry no dates, so the range filter doesn&rsquo;t apply to them.</p>}
           <h3 className="mg-dr-h3">Campaigns</h3>
           <table className="mg-table">
             <thead><tr><th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th></tr></thead>
             <tbody>
-              {[...cell.campaigns].sort((a, b) => b.spend - a.spend).map((k) => {
+              {cell.campaigns.map((k) => {
                 const kx = cpl(k.spend, k.leads);
                 return <tr key={k.name}><td>{k.name}</td><td>{k.spend ? moneyFull(k.spend) : "\u2014"}</td><td>{k.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
               })}
@@ -1114,8 +1026,7 @@ export default function App() {
             </tbody>
           </table>
           {cell.keywords?.length > 0 && (() => {
-            const kws = cell.keywords;
-            const dead = kws.filter((k) => !k.leads && k.spend > 0);
+            const kws = cell.keywords, dead = kws.filter((k) => !k.leads && k.spend > 0);
             const deadSpend = dead.reduce((a, k) => a + k.spend, 0);
             const shown = kws.slice(0, print ? 25 : 15);
             return (
@@ -1129,17 +1040,13 @@ export default function App() {
                       return (
                         <tr key={k.text} className={!k.leads && k.spend > 0 ? "is-dead" : ""}>
                           <td>{k.text}{k.match && <span className="mg-kw-match">{k.match}</span>}</td>
-                          <td>{moneyFull(k.spend)}</td>
-                          <td>{k.leads || "\u2014"}</td>
-                          <td>{kx ? "$" + Math.round(kx) : "\u2014"}</td>
+                          <td>{moneyFull(k.spend)}</td><td>{k.leads || "\u2014"}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-                {kws.length > shown.length && (
-                  <p className="mg-note">Showing the top {shown.length} of {kws.length} by spend. Export CSV for the full list.</p>
-                )}
+                {kws.length > shown.length && <p className="mg-note">Showing the top {shown.length} of {kws.length} by spend. Export CSV for the full list.</p>}
                 {deadSpend > 0 && (
                   <p className="mg-note is-flag">
                     {moneyFull(deadSpend)} across {dead.length} keyword{dead.length === 1 ? "" : "s"} with no conversions
@@ -1153,30 +1060,29 @@ export default function App() {
       );
     }
 
-    const isSbu = view.kind === "sbu";
-    const list = isSbu ? CHANNELS : SBUS;
-    const r = view.r, x = cpl(r.spend, r.leads);
-    const cellFor = (item) => (isSbu ? get(view.s.key, item.key) : get(item.key, view.ch.key));
-    const max = Math.max(...list.map((i) => totals(cellFor(i)).leads), 1);
+    const isSbu = view.kind === "sbu", list = isSbu ? CHANNELS : SBUS;
+    const rr = view.r, x = cpl(rr.spend, rr.leads);
+    const keyFor = (item) => (isSbu ? `${view.s.key}|${item.key}` : `${item.key}|${view.ch.key}`);
+    const max = Math.max(...list.map((i) => totals(cells[keyFor(i)]).leads), 1);
     return (
       <>
         <div className="mg-kpis">
-          <Kpi label="Leads" value={r.leads.toLocaleString()} sub={isSbu ? "all channels" : "all business units"} />
-          <Kpi label="Spend" value={moneyFull(r.spend)} sub="paid media only" />
+          <Kpi label="Leads" value={rr.leads.toLocaleString()} sub={isSbu ? "all channels" : "all business units"} />
+          <Kpi label="Spend" value={moneyFull(rr.spend)} sub="paid media only" />
           <Kpi label="Blended CPL" value={x ? "$" + Math.round(x) : "\u2014"} />
-          <Kpi label={isSbu ? "Live channels" : "Live for"} value={`${isSbu ? r.liveChannels : r.liveSbus} of ${list.length}`} sub={`${r.count} campaigns`} />
+          <Kpi label={isSbu ? "Live channels" : "Live for"} value={`${isSbu ? rr.liveChannels : rr.liveSbus} of ${list.length}`} sub={`${rr.count} campaigns`} />
         </div>
         <h3 className="mg-dr-h3">{isSbu ? "Where the leads come from" : "By business unit"}</h3>
         <div className="mg-bars">
           {list.map((item) => {
-            const cell = cellFor(item), st = statusOf(cell), t = totals(cell);
+            const key = keyFor(item), cell = cells[key] || null, st = statusOf(cell, key), t = totals(cell);
             const Tag = print ? "div" : "button";
             return (
               <Tag className="mg-barrow" key={item.key}
                 onClick={print ? undefined : () => setSel({ type: "cell", s: isSbu ? view.s.key : item.key, ch: isSbu ? item.key : view.ch.key })}>
                 <span className="mg-barrow-name">{item.name}</span>
                 <span className="mg-barrow-track"><span style={{ width: `${(t.leads / max) * 100}%`, background: STATUS[st].color }} /></span>
-                <span className="mg-barrow-val">{st === "live" ? t.leads : STATUS[st].label}</span>
+                <span className="mg-barrow-val">{cell ? t.leads : STATUS[st].label}</span>
               </Tag>
             );
           })}
@@ -1188,10 +1094,10 @@ export default function App() {
               <thead><tr><th>{isSbu ? "Channel" : "Business unit"}</th><th>Status</th><th>Spend</th><th>Leads</th><th>CPL</th></tr></thead>
               <tbody>
                 {list.map((item) => {
-                  const cell = cellFor(item), t = totals(cell), kx = cpl(t.spend, t.leads);
-                  return <tr key={item.key}><td>{item.name}</td><td>{STATUS[statusOf(cell)].label}</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
+                  const key = keyFor(item), cell = cells[key] || null, t = totals(cell), kx = cpl(t.spend, t.leads);
+                  return <tr key={item.key}><td>{item.name}</td><td>{STATUS[statusOf(cell, key)].label}</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
                 })}
-                <tr className="mg-total"><td>Total</td><td /><td>{moneyFull(r.spend)}</td><td>{r.leads}</td><td>{x ? "$" + Math.round(x) : "\u2014"}</td></tr>
+                <tr className="mg-total"><td>Total</td><td /><td>{moneyFull(rr.spend)}</td><td>{rr.leads}</td><td>{x ? "$" + Math.round(x) : "\u2014"}</td></tr>
               </tbody>
             </table>
           </>
@@ -1200,11 +1106,26 @@ export default function App() {
     );
   }
 
+  const applyImport = (out, name, mode) => {
+    setData((prev) => {
+      const base = mode === "replace" ? { rows: [], keywords: [], period: "" } : prev;
+      const isKw = out.kind === "keywords";
+      const incoming = out.rows;
+      const touched = new Set(incoming.map((x) => `${x.s}|${x.ch}|${x.week || ""}`));
+      const keep = (list) => list.filter((x) => !touched.has(`${x.s}|${x.ch}|${x.week || ""}`));
+      return {
+        rows: isKw ? base.rows : [...keep(base.rows || []), ...incoming],
+        keywords: isKw ? [...keep(base.keywords || []), ...incoming] : base.keywords || [],
+        period: `Imported from ${name}`,
+      };
+    });
+    setDirty(true); setSel(null); setShowImport(false); setCustom(null); setPreset("all");
+  };
+
   return (
     <>
       <style>{CSS}</style>
-
-      <div className={"mg-root" + (sel ? " has-drawer" : "")}>
+      <div className="mg-root">
         <header className="mg-head">
           <div>
             <p className="mg-eyebrow">reLink &middot; channel performance</p>
@@ -1222,6 +1143,10 @@ export default function App() {
           </div>
         </header>
 
+        <RangeBar weeks={weeks} from={from} to={to} preset={custom ? "custom" : preset} undated={undated} filtering={filtering}
+          onPreset={(k) => { setCustom(null); setPreset(k); }}
+          onCustom={(a, b) => setCustom({ from: a <= b ? a : b, to: a <= b ? b : a })} />
+
         <div className="mg-bar">
           <div className="mg-metricsel" role="group" aria-label="Metric shown on each cell">
             {METRICS.map((m) => (
@@ -1234,23 +1159,19 @@ export default function App() {
 
         <div className="mg-status">
           {online === false ? (
-            <span className="mg-status-note">
-              Working from the built-in data &mdash; storage isn&rsquo;t reachable, so nothing can be published from here.
-            </span>
+            <span className="mg-status-note">Working from the built-in data &mdash; storage isn&rsquo;t reachable, so nothing can be published from here.</span>
           ) : dirty ? (
             <>
               <span className="mg-status-note is-warn">New data loaded but not published. Only you can see it.</span>
               <button className="mg-btn mg-btn-sm" onClick={() => setShowPublish(true)}>Publish to team</button>
             </>
-          ) : meta ? (
+          ) : meta?.savedAt ? (
             <span className="mg-status-note">
-              Published for week of {meta.date}{meta.by ? ` by ${meta.by}` : ""}
-              {index.length > 1 ? ` \u00b7 ${index.length} weeks stored` : ""}
+              Published {new Date(meta.savedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {meta.by ? ` by ${meta.by}` : ""}{saves > 1 ? ` \u00b7 ${saves} saves` : ""}
             </span>
           ) : online ? (
-            <span className="mg-status-note">
-              Nothing published yet &mdash; this is the built-in data. Import a file, then publish it.
-            </span>
+            <span className="mg-status-note">Nothing published yet &mdash; this is the built-in data. Import a file, then publish it.</span>
           ) : (
             <span className="mg-status-note">Checking for saved data\u2026</span>
           )}
@@ -1259,17 +1180,15 @@ export default function App() {
         {narrow ? (
           <div className="mg-stack">
             {SBUS.map((s) => {
-              const r = roll.bySbu[s.key];
+              const rr = roll.bySbu[s.key];
               return (
                 <section className="mg-stack-card" key={s.key}>
                   <button className="mg-stack-head" onClick={() => setSel({ type: "sbu", s: s.key })}>
                     <span><h2>{s.name}</h2><p className="mg-stack-blurb">{s.blurb}</p></span>
-                    <span className="mg-stack-nums"><b>{r.leads}</b><i>leads &middot; {money(r.spend)}</i></span>
+                    <span className="mg-stack-nums"><b>{rr.leads}</b><i>leads &middot; {money(rr.spend)}</i></span>
                   </button>
                   <div className="mg-stack-rows">
-                    {CHANNELS.map((ch) => (
-                      <div className="mg-stack-row" key={ch.key}><span className="mg-stack-ch">{ch.name}</span><Cell s={s} ch={ch} /></div>
-                    ))}
+                    {CHANNELS.map((ch) => <div className="mg-stack-row" key={ch.key}><span className="mg-stack-ch">{ch.name}</span><Cell s={s} ch={ch} /></div>)}
                   </div>
                 </section>
               );
@@ -1280,13 +1199,13 @@ export default function App() {
             <div className="mg-matrix" style={{ "--cols": SBUS.length }}>
               <div className="mg-corner"><span>Channel</span><span className="mg-corner-r">Business unit &rarr;</span></div>
               {SBUS.map((s) => {
-                const r = roll.bySbu[s.key];
+                const rr = roll.bySbu[s.key];
                 return (
                   <button className={"mg-colhead" + (sel?.type === "sbu" && sel.s === s.key ? " is-sel" : "")} key={s.key} onClick={() => setSel({ type: "sbu", s: s.key })}>
                     <h2 className="mg-colhead-name">{s.name}</h2>
                     <p className="mg-colhead-blurb">{s.blurb}</p>
-                    <span className="mg-colhead-nums">{r.leads} leads &middot; {money(r.spend)}</span>
-                    <span className="mg-colhead-track"><i style={{ width: `${(r.leads / maxSbuLeads) * 100}%` }} /></span>
+                    <span className="mg-colhead-nums">{rr.leads} leads &middot; {money(rr.spend)}</span>
+                    <span className="mg-colhead-track"><i style={{ width: `${(rr.leads / maxSbuLeads) * 100}%` }} /></span>
                   </button>
                 );
               })}
@@ -1315,7 +1234,7 @@ export default function App() {
               <h2 className="mg-dr-title">{view.title}</h2>
               <div className="mg-dr-meta">
                 {view.kind === "cell" && <span className="mg-dr-status" style={{ color: view.color, borderColor: view.color }}>{STATUS[view.st].label}</span>}
-                <span>{view.sub}</span><span>{view.period || period}</span>
+                <span>{view.sub}</span><span>{period}</span>
               </div>
               <div className="mg-dr-actions">
                 <button className="mg-btn" onClick={() => window.print()}>Download PDF</button>
@@ -1328,42 +1247,16 @@ export default function App() {
       )}
 
       {showPublish && (
-        <PublishModal
-          cells={cells}
-          period={source || DEFAULT_PERIOD}
-          snapshots={index.length}
+        <PublishModal data={data} snapshots={saves}
           onClose={() => setShowPublish(false)}
-          onDone={(m, count) => {
-            setMeta(m);
-            setDirty(false);
-            setShowPublish(false);
-            loadRemote().then((out) => setIndex(out.index || [])).catch(() => {});
-          }}
-        />
+          onDone={(m) => { setMeta(m); setDirty(false); setShowPublish(false); setSaves((n) => n + 1); }} />
       )}
 
       {showImport && (
-        <ImportModal
-          imported={!!source}
+        <ImportModal imported={data !== SEED}
           onClose={() => setShowImport(false)}
-          onReset={() => { setCells(SEED); setSource(null); setSel(null); setShowImport(false); }}
-          onApply={(out, name) => {
-            if (out.kind === "keywords") {
-              setCells((prev) => {
-                const next = { ...prev };
-                Object.entries(out.keywords).forEach(([k, list]) => {
-                  if (next[k]?.campaigns) next[k] = { ...next[k], keywords: list };
-                });
-                return next;
-              });
-            } else {
-              setCells(out.cells);
-              setSource(`Imported from ${name}`);
-            }
-            setDirty(true);
-            setSel(null); setShowImport(false);
-          }}
-        />
+          onReset={() => { setData(SEED); setDirty(true); setShowImport(false); setCustom(null); setPreset("all"); }}
+          onApply={applyImport} />
       )}
 
       {view && (
@@ -1374,16 +1267,15 @@ export default function App() {
               <h1>{view.title}</h1>
               <p className="mg-print-crumb">{view.crumb} &middot; {view.sub}</p>
             </div>
-            <div className="mg-print-meta"><span>{view.period || period}</span><span>Generated {today()}</span></div>
+            <div className="mg-print-meta"><span>{period}</span><span>Generated {today()}</span></div>
           </div>
           <Report print />
-          <p className="mg-print-foot">reLink Medical &middot; Twinsburg, Ohio &middot; Generated from Mosaic Grid on {today()}</p>
+          <p className="mg-print-foot">reLink Medical &middot; Twinsburg, Ohio &middot; {period} &middot; Generated {today()}</p>
         </div>
       )}
     </>
   );
 }
-
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -1559,6 +1451,15 @@ const CSS = `
 .mg-status-note{font-size:12.5px;color:rgba(46,38,34,.45)}
 .mg-status-note.is-warn{color:#8A4A16;font-weight:600}
 .mg-btn-sm{padding:6px 15px;font-size:12.5px}
+.mg-range{display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:1420px;margin:0 auto 16px;padding:12px 16px;border:1px solid rgba(46,38,34,.12);border-radius:12px;background:#fff}
+.mg-range-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:rgba(46,38,34,.42)}
+.mg-range-pills{display:flex;gap:4px;flex-wrap:wrap}
+.mg-range-dates{display:flex;align-items:center;gap:7px;margin-left:4px}
+.mg-range-dates input{padding:6px 9px;border:1px solid rgba(46,38,34,.16);border-radius:7px;background:#FAF7F1;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#2E2622;cursor:pointer}
+.mg-range-dates input:focus{outline:none;border-color:#0598A6;box-shadow:0 0 0 3px rgba(5,152,166,.15)}
+.mg-range-dash{color:rgba(46,38,34,.3)}
+.mg-range-note{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.04em;color:rgba(46,38,34,.4)}
+@media (max-width:980px){.mg-range-note{margin-left:0;width:100%}}
 
 @keyframes mg-slide{from{transform:translateX(100%)}to{transform:none}}
 @keyframes mg-fade{from{opacity:0}to{opacity:1}}
