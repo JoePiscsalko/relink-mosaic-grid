@@ -72,23 +72,24 @@ const NO_DATA = {
 };
 
 /* row: business unit, channel, week (null = undated), name, spend, leads, reach, clicks */
-const r = (s, ch, week, name, spend, leads, reach, clicks, opens = 0, unsubs = 0) => ({ s, ch, week, name, spend, leads, reach, clicks, opens, unsubs });
+const r = (s, ch, week, name, spend, leads, reach, clicks, opens = 0, unsubs = 0, revenue = 0) =>
+  ({ s, ch, week, name, spend, leads, reach, clicks, opens, unsubs, revenue });
 const q = (s, ch, week, text, match, spend, leads, reach, clicks) => ({ s, ch, week, text, match, spend, leads, reach, clicks });
 
 /* Google Ads campaign export, Apr 28 - Jul 27 2026. Not segmented by
    week, so these are undated. Re-export with Segment > Time > Week
    and they become filterable. */
 const SEED_ROWS = [
-  r("ready","google",null,"Ready Products - PMAX",15072,137,3947001,42130),
-  r("ready","google",null,"Ready Products - Repair",4069,55,8218,759),
-  r("ready","google",null,"Ready Products - Rental",6478,161,24412,2161),
-  r("ready","google",null,"Ready Products - Top Brands",4217,13,14972,974),
-  r("disp","google",null,"Disposition - PMAX Shopping Feed ONLY",17091,319,2194856,32404),
-  r("disp","google",null,"Commercial - Disposition Partners",887,7,2707,322),
-  r("disp","google",null,"Disposition - Used Medical Equipment - Product Type",2831,10,15868,923),
-  r("disp","google",null,"Disposition - Used Medical Equipment",5443,120,16663,1458),
-  r("brand","google",null,"Blended - Branded",1465,381,3345,1413),
-  r("mev","google",null,"Monthly Auction Campaign",1185,34,6302,767),
+  r("ready","google",null,"Ready Products - PMAX",15072,137,3947001,39856,0,0,65707),
+  r("disp","google",null,"Disposition - PMAX Shopping Feed ONLY",17091,319,2194856,31207,0,0,90034),
+  r("disp","google",null,"Commercial - Disposition Partners",887,7,2707,322,0,0,180),
+  r("brand","google",null,"Blended - Branded",1465,381,3345,1413,0,0,32719),
+  r("mev","google",null,"Monthly Auction Campaign",1185,34,6302,767,0,0,11959),
+  r("ready","google",null,"Ready Products - Repair",4069,55,8218,759,0,0,410),
+  r("disp","google",null,"Disposition - Used Medical Equipment - Product Type",2831,10,15868,923,0,0,3400),
+  r("disp","google",null,"Disposition - Used Medical Equipment",5443,120,16663,1458,0,0,1604),
+  r("ready","google",null,"Ready Products - Rental",6478,161,24412,2161,0,0,2170),
+  r("ready","google",null,"Ready Products - Top Brands",4217,13,14972,974,0,0,2917),
 ];
 
 /* LinkedIn Campaign Manager, daily rows bucketed into weeks. */
@@ -311,6 +312,8 @@ const METRICS = [
   { key: "cpl",    label: "Cost per lead" },
   { key: "open",   label: "Open rate" },
   { key: "click",  label: "Click rate" },
+  { key: "rev",    label: "Revenue" },
+  { key: "roas",   label: "ROAS" },
 ];
 const PRESETS = [
   { key: "all", label: "All time", weeks: 0 },
@@ -344,9 +347,9 @@ function aggregate(data, from, to) {
   (data.rows || []).forEach((row) => {
     if (!inRange(row.week)) return;
     const b = bucket(`${row.s}|${row.ch}`);
-    const c = (b.campaigns[row.name] = b.campaigns[row.name] || { name: row.name, spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0 });
+    const c = (b.campaigns[row.name] = b.campaigns[row.name] || { name: row.name, spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0, revenue: 0 });
     c.spend += row.spend; c.leads += row.leads; c.reach += row.reach; c.clicks += row.clicks;
-    c.opens += row.opens || 0; c.unsubs += row.unsubs || 0;
+    c.opens += row.opens || 0; c.unsubs += row.unsubs || 0; c.revenue += row.revenue || 0;
     if (row.week) b.weeks[row.week] = (b.weeks[row.week] || 0) + row.leads;
   });
 
@@ -360,7 +363,7 @@ function aggregate(data, from, to) {
 
   const out = {};
   Object.entries(cells).forEach(([key, b]) => {
-    const campaigns = Object.values(b.campaigns).filter((c) => c.spend || c.leads || c.reach || c.clicks);
+    const campaigns = Object.values(b.campaigns).filter((c) => c.spend || c.leads || c.reach || c.clicks || c.revenue);
     if (!campaigns.length) return;
     const cell = { campaigns: campaigns.sort((a, c) => c.spend - a.spend) };
     const kws = Object.values(b.keywords).filter((k) => k.spend || k.leads || k.clicks);
@@ -393,11 +396,11 @@ const undatedCount = (data) => (data.rows || []).filter((x) => !x.week).length +
 
 const statusOf = (cell, key) => (cell ? "live" : NO_DATA[key] ? "planned" : "none");
 function totals(cell) {
-  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0, count: 0 };
+  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0, revenue: 0, count: 0 };
   if (!cell) return t;
   cell.campaigns.forEach((k) => {
     t.spend += k.spend; t.leads += k.leads; t.reach += k.reach; t.clicks += k.clicks;
-    t.opens += k.opens || 0; t.unsubs += k.unsubs || 0; t.count++;
+    t.opens += k.opens || 0; t.unsubs += k.unsubs || 0; t.revenue += k.revenue || 0; t.count++;
   });
   return t;
 }
@@ -417,6 +420,14 @@ function metricValue(key, t, ch) {
     if (ch.kind !== "email") return { text: "\u2014", unit: "not tracked here" };
     const v = rate(t.opens, t.reach);
     return { text: pctText(v), unit: "open rate" };
+  }
+  if (key === "rev") return t.revenue
+    ? { text: money(t.revenue), unit: "revenue" }
+    : { text: "\u2014", unit: "no value tracked" };
+  if (key === "roas") {
+    if (!t.revenue || !t.spend) return { text: "\u2014", unit: t.revenue ? "no media cost" : "no value tracked" };
+    const x = t.revenue / t.spend;
+    return { text: (x >= 10 ? x.toFixed(0) : x.toFixed(1)) + "x", unit: "return on spend" };
   }
   const v = rate(t.clicks, t.reach);
   return { text: pctText(v), unit: ch.kind === "email" ? "click rate" : "click-through" };
@@ -483,6 +494,8 @@ const ALIASES = {
   leads:    ["leads", "conversions", "conv", "conversion", "form fills", "submissions",
              "all conv", "all conversions", "key results", "results", "lead form completions"],
   reach:    ["reach", "impr", "impressions", "sends", "delivered", "touches", "views", "sent"],
+  revenue:  ["conv value", "conv value all", "conversion value", "total revenue", "revenue",
+             "purchase revenue", "item revenue", "all conv value", "value"],
   clicks:   ["clicks", "link clicks", "unique clicks", "interactions", "total clicks"],
   week:     ["week", "date", "week start", "week of", "day", "month", "period",
              "start date", "start date in utc", "day start", "reporting starts", "date start"],
@@ -561,7 +574,8 @@ function parseFile(text, opts = {}) {
     const clicks = col.clicks >= 0 ? numOf(rw[col.clicks]) : 0;
     const opens  = col.opens  >= 0 ? numOf(rw[col.opens])  : 0;
     const unsubs = col.unsubs >= 0 ? numOf(rw[col.unsubs]) : 0;
-    if (!spend && !leads && !reach && !clicks && !opens) { skippedEmpty++; return; }
+    const revenue = col.revenue >= 0 ? numOf(rw[col.revenue]) : 0;
+    if (!spend && !leads && !reach && !clicks && !opens && !revenue) { skippedEmpty++; return; }
 
     let s = col.sbu >= 0 ? matchKey(SBUS, rw[col.sbu]) : null;
     if (!s) s = ruleMatch(CAMPAIGN_RULES, camp, "sbu");
@@ -582,7 +596,7 @@ function parseFile(text, opts = {}) {
     if (week) weeks.add(week);
     out.push(isKw
       ? { s, ch, week, text: label, match: col.match >= 0 ? String(rw[col.match] || "").trim() : "", spend, leads: Math.round(leads), reach, clicks }
-      : { s, ch, week, name: label, spend, leads: Math.round(leads), reach, clicks, opens, unsubs });
+      : { s, ch, week, name: label, spend, leads: Math.round(leads), reach, clicks, opens, unsubs, revenue });
     used++;
   });
 
@@ -931,16 +945,16 @@ export default function App() {
   const period = filtering ? prettyRange(from, to) : data.period || "All time";
 
   const roll = useMemo(() => {
-    const bySbu = {}, byChannel = {}, all = { spend: 0, leads: 0, count: 0, gaps: 0 };
-    SBUS.forEach((s) => (bySbu[s.key] = { spend: 0, leads: 0, count: 0, liveChannels: 0 }));
-    CHANNELS.forEach((ch) => (byChannel[ch.key] = { spend: 0, leads: 0, count: 0, liveSbus: 0 }));
+    const bySbu = {}, byChannel = {}, all = { spend: 0, leads: 0, count: 0, revenue: 0, gaps: 0 };
+    SBUS.forEach((s) => (bySbu[s.key] = { spend: 0, leads: 0, count: 0, revenue: 0, liveChannels: 0 }));
+    CHANNELS.forEach((ch) => (byChannel[ch.key] = { spend: 0, leads: 0, count: 0, revenue: 0, liveSbus: 0 }));
     SBUS.forEach((s) => CHANNELS.forEach((ch) => {
       const cell = cells[`${s.key}|${ch.key}`] || null, t = totals(cell);
       if (!cell) all.gaps++;
-      bySbu[s.key].spend += t.spend; bySbu[s.key].leads += t.leads; bySbu[s.key].count += t.count;
-      byChannel[ch.key].spend += t.spend; byChannel[ch.key].leads += t.leads; byChannel[ch.key].count += t.count;
+      bySbu[s.key].spend += t.spend; bySbu[s.key].leads += t.leads; bySbu[s.key].count += t.count; bySbu[s.key].revenue += t.revenue;
+      byChannel[ch.key].spend += t.spend; byChannel[ch.key].leads += t.leads; byChannel[ch.key].count += t.count; byChannel[ch.key].revenue += t.revenue;
       if (cell) { bySbu[s.key].liveChannels++; byChannel[ch.key].liveSbus++; }
-      all.spend += t.spend; all.leads += t.leads; all.count += t.count;
+      all.spend += t.spend; all.leads += t.leads; all.count += t.count; all.revenue += t.revenue;
     }));
     return { bySbu, byChannel, all };
   }, [cells]);
@@ -967,14 +981,15 @@ export default function App() {
     if (!view) return;
     let rows;
     if (view.kind === "cell") {
-      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks", "Opens", "Open rate", "Click rate", "Unsubscribes", "Range"]];
+      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks", "Opens", "Open rate", "Click rate", "Unsubscribes", "Revenue", "ROAS", "Range"]];
       (view.cell?.campaigns || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
         const orr = rate(k.opens, k.reach), crr = rate(k.clicks, k.reach);
         rows.push([view.s.name, view.ch.name, view.ch.unit === "email" ? "Email" : "Campaign", k.name, "",
           Math.round(k.spend), k.leads, x ? Math.round(x) : "", Math.round(k.reach), Math.round(k.clicks),
           Math.round(k.opens || 0), orr === null ? "" : orr.toFixed(1), crr === null ? "" : crr.toFixed(1),
-          Math.round(k.unsubs || 0), period]);
+          Math.round(k.unsubs || 0), Math.round(k.revenue || 0),
+          k.revenue && k.spend ? (k.revenue / k.spend).toFixed(2) : "", period]);
       });
       (view.cell?.keywords || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
@@ -1055,6 +1070,8 @@ export default function App() {
               <Kpi label="Spend" value={t.spend ? moneyFull(t.spend) : "\u2014"} sub={ch.paid ? "paid media" : "no media cost"} />
               <Kpi label="Cost per lead" value={x ? "$" + Math.round(x) : "\u2014"} sub={x ? null : "owned channel"} />
               <Kpi label={ch.reach} value={num(t.reach)} sub={ctr ? ctr.toFixed(2) + "% click rate" : null} />
+              {t.revenue > 0 && <Kpi label="Revenue" value={moneyFull(t.revenue)} sub={`${moneyFull(t.revenue / t.leads)} per lead`} />}
+              {t.revenue > 0 && t.spend > 0 && <Kpi label="ROAS" value={(t.revenue / t.spend).toFixed(1) + "x"} sub="tracked value over spend" />}
             </div>
           )}
           {ch.kind === "email" && t.opens > 0 && (() => {
@@ -1093,13 +1110,29 @@ export default function App() {
             </table>
           ) : (
             <table className="mg-table">
-              <thead><tr><th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th></tr></thead>
+              <thead><tr>
+                <th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th>
+                {t.revenue > 0 && <th>ROAS</th>}
+              </tr></thead>
               <tbody>
                 {cell.campaigns.map((k) => {
                   const kx = cpl(k.spend, k.leads);
-                  return <tr key={k.name}><td>{k.name}</td><td>{k.spend ? moneyFull(k.spend) : "\u2014"}</td><td>{k.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
+                  const kr = k.revenue && k.spend ? k.revenue / k.spend : null;
+                  return (
+                    <tr key={k.name} className={t.revenue > 0 && kr !== null && kr < 1 ? "is-dead" : ""}>
+                      <td>{k.name}</td>
+                      <td>{k.spend ? moneyFull(k.spend) : "\u2014"}</td>
+                      <td>{k.leads}</td>
+                      <td>{kx ? "$" + Math.round(kx) : "\u2014"}</td>
+                      {t.revenue > 0 && <td>{kr ? kr.toFixed(1) + "x" : "\u2014"}</td>}
+                    </tr>
+                  );
                 })}
-                <tr className="mg-total"><td>Total</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td><td>{x ? "$" + Math.round(x) : "\u2014"}</td></tr>
+                <tr className="mg-total">
+                  <td>Total</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td>
+                  <td>{x ? "$" + Math.round(x) : "\u2014"}</td>
+                  {t.revenue > 0 && <td>{(t.revenue / t.spend).toFixed(1) + "x"}</td>}
+                </tr>
               </tbody>
             </table>
           )}
@@ -1148,6 +1181,8 @@ export default function App() {
           <Kpi label="Leads" value={rr.leads.toLocaleString()} sub={isSbu ? "all channels" : "all business units"} />
           <Kpi label="Spend" value={moneyFull(rr.spend)} sub="paid media only" />
           <Kpi label="Blended CPL" value={x ? "$" + Math.round(x) : "\u2014"} />
+          {rr.revenue > 0 && <Kpi label="Revenue" value={moneyFull(rr.revenue)} sub="tracked value" />}
+          {rr.revenue > 0 && rr.spend > 0 && <Kpi label="ROAS" value={(rr.revenue / rr.spend).toFixed(1) + "x"} />}
           <Kpi label={isSbu ? "Live channels" : "Live for"} value={`${isSbu ? rr.liveChannels : rr.liveSbus} of ${list.length}`} sub={`${rr.count} campaigns`} />
         </div>
         <h3 className="mg-dr-h3">{isSbu ? "Where the leads come from" : "By business unit"}</h3>
@@ -1216,7 +1251,9 @@ export default function App() {
               <div className="mg-tally-item"><span className="mg-tally-num">{roll.all.leads.toLocaleString()}</span><span className="mg-tally-label">Leads</span></div>
               <div className="mg-tally-item"><span className="mg-tally-num">{money(roll.all.spend)}</span><span className="mg-tally-label">Spend</span></div>
               <div className="mg-tally-item"><span className="mg-tally-num">{roll.all.leads ? "$" + Math.round(roll.all.spend / roll.all.leads) : "\u2014"}</span><span className="mg-tally-label">Blended CPL</span></div>
-              <div className="mg-tally-item"><span className="mg-tally-num" style={{ color: "#F38637" }}>{roll.all.gaps}</span><span className="mg-tally-label">No data</span></div>
+              {roll.all.revenue > 0
+                ? <div className="mg-tally-item"><span className="mg-tally-num" style={{ color: "#90AD51" }}>{(roll.all.revenue / roll.all.spend).toFixed(1)}x</span><span className="mg-tally-label">ROAS</span></div>
+                : <div className="mg-tally-item"><span className="mg-tally-num" style={{ color: "#F38637" }}>{roll.all.gaps}</span><span className="mg-tally-label">No data</span></div>}
             </div>
           </div>
         </header>
