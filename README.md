@@ -60,6 +60,32 @@ Raw exports work as-is. No editing, no adding columns.
 
 ---
 
+## Email is measured differently
+
+Leads and cost per lead are the wrong yardstick for an owned channel, so
+the Email row speaks its own language.
+
+The metric picker has five options: Leads, Spend, Cost per lead, Open rate
+and Click rate. Each cell answers in whatever terms make sense for it — pick
+Open rate and email cells show 26%, while Google shows "not tracked here".
+Pick Spend and it's the other way round. The small line under the big number
+follows the same rule: sends for email, spend for paid.
+
+Opening an email cell gives Sends, Open rate, Click rate and Leads, plus a
+click-to-open figure and unsubscribes, and a per-email table of sent / open /
+click / leads instead of the spend table paid channels get.
+
+**Exporting from SFMC.** Any send summary with one row per email works.
+Recognized columns include Email Name, Sent, Unique Opens, Unique Clicks,
+Unsubscribes and Week. Pick **Email** in the channel picker on import.
+
+**Where the lead number comes from.** SFMC counts sends, opens and clicks —
+it does not count leads. Use your WPForms channel classification for the
+leads column, since that already resolves email-sourced leads by UTM. Without
+it the row still works, it just shows no leads.
+
+---
+
 ## Date range filtering
 
 Every number is added up from rows inside the selected range — cells,
