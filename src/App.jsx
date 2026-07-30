@@ -26,11 +26,11 @@ const SBUS = [
 ];
 
 const CHANNELS = [
-  { key: "google",  name: "Google Ads",     reach: "Impressions", paid: true,  note: "Search, PMax, Shopping" },
-  { key: "social",  name: "Paid Social",    reach: "Impressions", paid: true,  note: "LinkedIn and Meta" },
-  { key: "email",   name: "Email",          reach: "Sends",       paid: false, note: "SFMC journeys and sends" },
-  { key: "display", name: "Display Ads",    reach: "Impressions", paid: true,  note: "Retargeting and prospecting" },
-  { key: "toolkit", name: "Sales Tool Kit", reach: "Touches",     paid: false, note: "What the AE team carries" },
+  { key: "google",  name: "Google Ads",     reach: "Impressions", paid: true,  kind: "paid",  unit: "campaign", note: "Search, PMax, Shopping" },
+  { key: "social",  name: "Paid Social",    reach: "Impressions", paid: true,  kind: "paid",  unit: "campaign", note: "LinkedIn and Meta" },
+  { key: "email",   name: "Email",          reach: "Sends",       paid: false, kind: "email", unit: "email",    note: "SFMC journeys and sends" },
+  { key: "display", name: "Display Ads",    reach: "Impressions", paid: true,  kind: "paid",  unit: "campaign", note: "Retargeting and prospecting" },
+  { key: "toolkit", name: "Sales Tool Kit", reach: "Touches",     paid: false, kind: "owned", unit: "asset",    note: "What the AE team carries" },
 ];
 
 const CAMPAIGN_RULES = [
@@ -72,7 +72,7 @@ const NO_DATA = {
 };
 
 /* row: business unit, channel, week (null = undated), name, spend, leads, reach, clicks */
-const r = (s, ch, week, name, spend, leads, reach, clicks) => ({ s, ch, week, name, spend, leads, reach, clicks });
+const r = (s, ch, week, name, spend, leads, reach, clicks, opens = 0, unsubs = 0) => ({ s, ch, week, name, spend, leads, reach, clicks, opens, unsubs });
 const q = (s, ch, week, text, match, spend, leads, reach, clicks) => ({ s, ch, week, text, match, spend, leads, reach, clicks });
 
 /* Google Ads campaign export, Apr 28 - Jul 27 2026. Not segmented by
@@ -306,9 +306,11 @@ const STATUS = {
   none:     { label: "No data",      color: "#2E2622" },
 };
 const METRICS = [
-  { key: "leads", label: "Leads" },
-  { key: "spend", label: "Spend" },
-  { key: "cpl",   label: "Cost per lead" },
+  { key: "leads",  label: "Leads" },
+  { key: "spend",  label: "Spend" },
+  { key: "cpl",    label: "Cost per lead" },
+  { key: "open",   label: "Open rate" },
+  { key: "click",  label: "Click rate" },
 ];
 const PRESETS = [
   { key: "all", label: "All time", weeks: 0 },
@@ -342,8 +344,9 @@ function aggregate(data, from, to) {
   (data.rows || []).forEach((row) => {
     if (!inRange(row.week)) return;
     const b = bucket(`${row.s}|${row.ch}`);
-    const c = (b.campaigns[row.name] = b.campaigns[row.name] || { name: row.name, spend: 0, leads: 0, reach: 0, clicks: 0 });
+    const c = (b.campaigns[row.name] = b.campaigns[row.name] || { name: row.name, spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0 });
     c.spend += row.spend; c.leads += row.leads; c.reach += row.reach; c.clicks += row.clicks;
+    c.opens += row.opens || 0; c.unsubs += row.unsubs || 0;
     if (row.week) b.weeks[row.week] = (b.weeks[row.week] || 0) + row.leads;
   });
 
@@ -390,16 +393,40 @@ const undatedCount = (data) => (data.rows || []).filter((x) => !x.week).length +
 
 const statusOf = (cell, key) => (cell ? "live" : NO_DATA[key] ? "planned" : "none");
 function totals(cell) {
-  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, count: 0 };
+  const t = { spend: 0, leads: 0, reach: 0, clicks: 0, opens: 0, unsubs: 0, count: 0 };
   if (!cell) return t;
-  cell.campaigns.forEach((k) => { t.spend += k.spend; t.leads += k.leads; t.reach += k.reach; t.clicks += k.clicks; t.count++; });
+  cell.campaigns.forEach((k) => {
+    t.spend += k.spend; t.leads += k.leads; t.reach += k.reach; t.clicks += k.clicks;
+    t.opens += k.opens || 0; t.unsubs += k.unsubs || 0; t.count++;
+  });
   return t;
 }
-function metricValue(key, t) {
+const rate = (n, d) => (d > 0 ? (n / d) * 100 : null);
+const pctText = (v) => (v === null ? "\u2014" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + "%");
+
+function metricValue(key, t, ch) {
   if (key === "leads") return { text: t.leads.toLocaleString(), unit: "leads" };
-  if (key === "spend") return { text: t.spend ? money(t.spend) : "$0", unit: "spend" };
-  const x = cpl(t.spend, t.leads);
-  return { text: x ? "$" + Math.round(x) : "\u2014", unit: "per lead" };
+  if (key === "spend") return ch.paid
+    ? { text: t.spend ? money(t.spend) : "$0", unit: "spend" }
+    : { text: "\u2014", unit: "no media cost" };
+  if (key === "cpl") {
+    const x = cpl(t.spend, t.leads);
+    return { text: x ? "$" + Math.round(x) : "\u2014", unit: x ? "per lead" : "no media cost" };
+  }
+  if (key === "open") {
+    if (ch.kind !== "email") return { text: "\u2014", unit: "not tracked here" };
+    const v = rate(t.opens, t.reach);
+    return { text: pctText(v), unit: "open rate" };
+  }
+  const v = rate(t.clicks, t.reach);
+  return { text: pctText(v), unit: ch.kind === "email" ? "click rate" : "click-through" };
+}
+
+/* What the small line under the big number says, per channel. */
+function statLine(t, ch) {
+  if (ch.kind === "email") return num(t.reach) + " sent";
+  if (ch.paid) return money(t.spend);
+  return num(t.reach) + " " + ch.reach.toLowerCase();
 }
 
 /* ---------------- storage ---------------- */
@@ -448,7 +475,8 @@ function parseDelimited(text, d) {
 const ALIASES = {
   sbu:      ["sbu", "business unit", "businessunit", "unit", "brand", "product line"],
   channel:  ["channel", "media channel", "source", "platform"],
-  campaign: ["campaign", "campaign name", "name", "ad group", "asset"],
+  campaign: ["campaign", "campaign name", "name", "ad group", "asset",
+             "email name", "send name", "job name", "message name", "asset name", "journey", "send"],
   type:     ["campaign type", "type", "advertising channel type", "campaign subtype"],
   spend:    ["spend", "cost", "amount spent", "media spend", "budget spent", "total spend",
              "total spent", "total spent usd", "amount spent usd", "spent", "cost usd"],
@@ -460,6 +488,8 @@ const ALIASES = {
              "start date", "start date in utc", "day start", "reporting starts", "date start"],
   keyword:  ["keyword", "search keyword", "keyword text", "search term", "search terms", "query"],
   match:    ["match type", "search keyword match type", "keyword match type", "search term match type"],
+  opens:    ["opens", "unique opens", "total opens", "opened", "unique open", "open"],
+  unsubs:   ["unsubscribes", "unsubs", "unsubscribe", "opt outs", "optouts", "unsubscribed"],
 };
 
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\u00ae|\u2122/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -529,7 +559,9 @@ function parseFile(text, opts = {}) {
     const leads  = col.leads  >= 0 ? numOf(rw[col.leads])  : 0;
     const reach  = col.reach  >= 0 ? numOf(rw[col.reach])  : 0;
     const clicks = col.clicks >= 0 ? numOf(rw[col.clicks]) : 0;
-    if (!spend && !leads && !reach && !clicks) { skippedEmpty++; return; }
+    const opens  = col.opens  >= 0 ? numOf(rw[col.opens])  : 0;
+    const unsubs = col.unsubs >= 0 ? numOf(rw[col.unsubs]) : 0;
+    if (!spend && !leads && !reach && !clicks && !opens) { skippedEmpty++; return; }
 
     let s = col.sbu >= 0 ? matchKey(SBUS, rw[col.sbu]) : null;
     if (!s) s = ruleMatch(CAMPAIGN_RULES, camp, "sbu");
@@ -550,7 +582,7 @@ function parseFile(text, opts = {}) {
     if (week) weeks.add(week);
     out.push(isKw
       ? { s, ch, week, text: label, match: col.match >= 0 ? String(rw[col.match] || "").trim() : "", spend, leads: Math.round(leads), reach, clicks }
-      : { s, ch, week, name: label, spend, leads: Math.round(leads), reach, clicks });
+      : { s, ch, week, name: label, spend, leads: Math.round(leads), reach, clicks, opens, unsubs });
     used++;
   });
 
@@ -935,10 +967,14 @@ export default function App() {
     if (!view) return;
     let rows;
     if (view.kind === "cell") {
-      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks", "Range"]];
+      rows = [["Business unit", "Channel", "Level", "Name", "Match", "Spend", "Leads", "Cost per lead", view.ch.reach, "Clicks", "Opens", "Open rate", "Click rate", "Unsubscribes", "Range"]];
       (view.cell?.campaigns || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
-        rows.push([view.s.name, view.ch.name, "Campaign", k.name, "", Math.round(k.spend), k.leads, x ? Math.round(x) : "", Math.round(k.reach), Math.round(k.clicks), period]);
+        const orr = rate(k.opens, k.reach), crr = rate(k.clicks, k.reach);
+        rows.push([view.s.name, view.ch.name, view.ch.unit === "email" ? "Email" : "Campaign", k.name, "",
+          Math.round(k.spend), k.leads, x ? Math.round(x) : "", Math.round(k.reach), Math.round(k.clicks),
+          Math.round(k.opens || 0), orr === null ? "" : orr.toFixed(1), crr === null ? "" : crr.toFixed(1),
+          Math.round(k.unsubs || 0), period]);
       });
       (view.cell?.keywords || []).forEach((k) => {
         const x = cpl(k.spend, k.leads);
@@ -960,7 +996,7 @@ export default function App() {
     const key = `${s.key}|${ch.key}`, cell = cells[key] || null;
     const st = statusOf(cell, key), t = totals(cell);
     const isSel = sel?.type === "cell" && sel.s === s.key && sel.ch === ch.key;
-    const m = metricValue(metric, t);
+    const m = metricValue(metric, t, ch);
     const up = (cell?.delta ?? 0) >= 0;
     const trendColor = up ? "#90AD51" : "#F38637";
     return (
@@ -972,10 +1008,10 @@ export default function App() {
       >
         {cell ? (
           <>
-            <span className="mg-cell-top"><span className="mg-dot" /><span className="mg-cell-count">{t.count} {t.count === 1 ? "campaign" : "campaigns"}</span></span>
+            <span className="mg-cell-top"><span className="mg-dot" /><span className="mg-cell-count">{t.count} {ch.unit}{t.count === 1 ? "" : "s"}</span></span>
             <span className="mg-cell-metric"><b>{m.text}</b><i>{m.unit}</i></span>
             <span className="mg-cell-row">
-              <span className="mg-cell-spend">{ch.paid ? money(t.spend) : num(t.reach) + " " + ch.reach.toLowerCase()}</span>
+              <span className="mg-cell-spend">{statLine(t, ch)}</span>
               {cell.delta !== undefined && <span className="mg-delta" style={{ color: trendColor }}>{up ? "\u25B2" : "\u25BC"} {pct(cell.delta).replace("+", "")}</span>}
               {!cell.dated && <span className="mg-period-flag" title="Undated rows — not affected by the date filter">undated</span>}
             </span>
@@ -1006,25 +1042,67 @@ export default function App() {
         );
       return (
         <>
-          <div className="mg-kpis">
-            <Kpi label="Leads" value={t.leads.toLocaleString()} sub={cell.delta !== undefined ? pct(cell.delta) + " vs prior weeks" : null} />
-            <Kpi label="Spend" value={t.spend ? moneyFull(t.spend) : "\u2014"} sub={ch.paid ? "paid media" : "no media cost"} />
-            <Kpi label="Cost per lead" value={x ? "$" + Math.round(x) : "\u2014"} sub={x ? null : "owned channel"} />
-            <Kpi label={ch.reach} value={num(t.reach)} sub={ctr ? ctr.toFixed(2) + "% click rate" : null} />
-          </div>
+          {ch.kind === "email" ? (
+            <div className="mg-kpis">
+              <Kpi label="Sends" value={num(t.reach)} sub={`${t.count} email${t.count === 1 ? "" : "s"}`} />
+              <Kpi label="Open rate" value={pctText(rate(t.opens, t.reach))} sub={t.opens ? `${Math.round(t.opens).toLocaleString()} opens` : "no open data"} />
+              <Kpi label="Click rate" value={pctText(rate(t.clicks, t.reach))} sub={t.clicks ? `${Math.round(t.clicks).toLocaleString()} clicks` : null} />
+              <Kpi label="Leads" value={t.leads.toLocaleString()} sub={cell.delta !== undefined ? pct(cell.delta) + " vs prior weeks" : null} />
+            </div>
+          ) : (
+            <div className="mg-kpis">
+              <Kpi label="Leads" value={t.leads.toLocaleString()} sub={cell.delta !== undefined ? pct(cell.delta) + " vs prior weeks" : null} />
+              <Kpi label="Spend" value={t.spend ? moneyFull(t.spend) : "\u2014"} sub={ch.paid ? "paid media" : "no media cost"} />
+              <Kpi label="Cost per lead" value={x ? "$" + Math.round(x) : "\u2014"} sub={x ? null : "owned channel"} />
+              <Kpi label={ch.reach} value={num(t.reach)} sub={ctr ? ctr.toFixed(2) + "% click rate" : null} />
+            </div>
+          )}
+          {ch.kind === "email" && t.opens > 0 && (() => {
+            const ctor = rate(t.clicks, t.opens);
+            const unsub = rate(t.unsubs, t.reach);
+            return (
+              <p className="mg-note">
+                {pctText(ctor)} of opens clicked through.
+                {t.unsubs > 0 && ` ${Math.round(t.unsubs).toLocaleString()} unsubscribes, ${pctText(unsub)} of sends.`}
+              </p>
+            );
+          })()}
           {cell.trend && (<><h3 className="mg-dr-h3">Leads by week</h3><TrendChart data={cell.trend} color={color} /></>)}
           {!cell.dated && <p className="mg-note">These rows carry no dates, so the range filter doesn&rsquo;t apply to them.</p>}
-          <h3 className="mg-dr-h3">Campaigns</h3>
-          <table className="mg-table">
-            <thead><tr><th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th></tr></thead>
-            <tbody>
-              {cell.campaigns.map((k) => {
-                const kx = cpl(k.spend, k.leads);
-                return <tr key={k.name}><td>{k.name}</td><td>{k.spend ? moneyFull(k.spend) : "\u2014"}</td><td>{k.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
-              })}
-              <tr className="mg-total"><td>Total</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td><td>{x ? "$" + Math.round(x) : "\u2014"}</td></tr>
-            </tbody>
-          </table>
+          <h3 className="mg-dr-h3">{ch.kind === "email" ? "Emails" : "Campaigns"}</h3>
+          {ch.kind === "email" ? (
+            <table className="mg-table mg-table-kw">
+              <thead><tr><th>Email</th><th>Sent</th><th>Open</th><th>Click</th><th>Leads</th></tr></thead>
+              <tbody>
+                {[...cell.campaigns].sort((a, b) => b.reach - a.reach).map((k) => (
+                  <tr key={k.name}>
+                    <td>{k.name}</td>
+                    <td>{num(k.reach)}</td>
+                    <td>{pctText(rate(k.opens, k.reach))}</td>
+                    <td>{pctText(rate(k.clicks, k.reach))}</td>
+                    <td>{k.leads || "\u2014"}</td>
+                  </tr>
+                ))}
+                <tr className="mg-total">
+                  <td>Total</td><td>{num(t.reach)}</td>
+                  <td>{pctText(rate(t.opens, t.reach))}</td>
+                  <td>{pctText(rate(t.clicks, t.reach))}</td>
+                  <td>{t.leads}</td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <table className="mg-table">
+              <thead><tr><th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th></tr></thead>
+              <tbody>
+                {cell.campaigns.map((k) => {
+                  const kx = cpl(k.spend, k.leads);
+                  return <tr key={k.name}><td>{k.name}</td><td>{k.spend ? moneyFull(k.spend) : "\u2014"}</td><td>{k.leads}</td><td>{kx ? "$" + Math.round(kx) : "\u2014"}</td></tr>;
+                })}
+                <tr className="mg-total"><td>Total</td><td>{t.spend ? moneyFull(t.spend) : "\u2014"}</td><td>{t.leads}</td><td>{x ? "$" + Math.round(x) : "\u2014"}</td></tr>
+              </tbody>
+            </table>
+          )}
           {cell.keywords?.length > 0 && (() => {
             const kws = cell.keywords, dead = kws.filter((k) => !k.leads && k.spend > 0);
             const deadSpend = dead.reduce((a, k) => a + k.spend, 0);
