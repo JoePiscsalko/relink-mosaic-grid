@@ -60,26 +60,51 @@ Raw exports work as-is. No editing, no adding columns.
 
 ---
 
+## Date range filtering
+
+Every number is added up from rows inside the selected range — cells,
+roll-ups, trends, CSV exports and PDFs all follow it.
+
+Presets are All time / Last 4 / 8 / 13 weeks, plus two date boxes for
+anything custom. The PDF footer records the range it was run for, so a
+printed report can't be mistaken for a different period.
+
+**Rows only filter if they have dates.** That depends on the export:
+
+| Platform | What to do |
+|---|---|
+| Google Ads | `Segment → Time → Week` before downloading |
+| LinkedIn | export daily; the importer buckets days into weeks |
+| Anything else | include a `week` or `date` column |
+
+An export without a date column still imports and still counts — it just
+shows an **undated** chip on the cell and only appears under All time.
+The seeded Google data is undated for exactly this reason, so choosing
+Last 4 weeks right now leaves only LinkedIn on screen. Re-export Google
+with the weekly segment and that resolves itself.
+
+---
+
 ## How storage works
 
 One Netlify Blobs store, `mosaic-grid`:
 
 | Key | What it holds |
 |---|---|
-| `latest` | the snapshot the app loads on open |
-| `snapshot/<date>` | every week ever published, kept |
-| `index` | per-week totals per cell, used to draw trends |
+| `current` | the dataset the app loads on open |
+| `backup/<timestamp>` | every publish, kept |
+| `saves` | how many times it's been published |
 
-A full week — campaigns, all keywords, LinkedIn — is about **30 KB**.
-A year of weekly saves is **1.5 MB**. This will not become a storage problem.
+Rows carry their own dates, so there's one living dataset rather than a
+pile of weekly snapshots. The whole thing is roughly **30 KB**, and even
+years of weekly history stays in the low megabytes.
 
-**Trends improve on their own.** Each publish appends a point to `index`.
-After three weeks the sparklines and the ▲▼ arrows start drawing themselves
-from your own history, whether or not the export had a week column. The
-drawer says when a trend came from saved history rather than the file.
+On import you choose **Add to what's here** or **Replace everything**.
+Adding leaves other channels alone and overwrites only the weeks the new
+file covers — so a corrected Google export fixes those weeks without
+touching LinkedIn. Replacing starts over from that one file.
 
-Re-publishing the same week replaces it rather than duplicating it, so a
-mistake is fixed by importing again and publishing to the same date.
+Every publish files a timestamped backup, so a bad upload is recoverable.
 
 ---
 
