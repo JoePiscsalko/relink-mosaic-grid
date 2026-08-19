@@ -1,0 +1,69 @@
+FORM FILLS TAB — upload instructions
+====================================
+
+GitHub will not unzip a zip file. Unzip this on your machine first,
+then drag the FOLDERS into GitHub. Dragging a folder keeps the paths;
+dragging loose files does not, which is what went wrong last time.
+
+STEP 1 — clear the four stray files from the repo root
+------------------------------------------------------
+In relink-mosaic-grid, these are currently sitting in the root and
+need to go. For each one: click it, then the trash icon, then
+Commit changes.
+
+    FormFills.jsx
+    Shell.jsx
+    forms.js
+    main.jsx
+
+Nothing breaks while you do this. The grid does not reference any of
+them yet.
+
+STEP 2 — upload the two folders together
+-----------------------------------------
+Add file  ->  Upload files
+
+Drag BOTH of these folders into the drop area at the same time:
+
+    src
+    netlify
+
+GitHub will show four files staged at these paths. Check the paths
+read exactly like this before committing:
+
+    src/FormFills.jsx
+    src/Shell.jsx
+    src/main.jsx           <- replaces the existing file, this is correct
+    netlify/functions/forms.js
+
+Commit once. One commit means the build never sees a half-finished
+state.
+
+STEP 3 — confirm
+----------------
+src/ should now hold four files:
+
+    App.jsx        (untouched)
+    FormFills.jsx
+    Shell.jsx
+    main.jsx
+
+netlify/functions/ should hold two:
+
+    data.js        (untouched)
+    forms.js
+
+Netlify redeploys on the commit. When it finishes, a tab strip appears
+at the top of the grid. Form Fills lives at:
+
+    marketing-grid.netlify.app/#forms
+
+No new environment variable. forms.js reuses MOSAIC_WRITE_KEY, so the
+same passphrase publishes both tabs.
+
+If the drag does not work
+-------------------------
+Some browsers block folder drag-and-drop. Fall back to uploading the
+four files loose, then rename each one to add its folder: click the
+file, the pencil icon, and type the folder plus a slash in front of
+the filename. Save main.jsx for last.
