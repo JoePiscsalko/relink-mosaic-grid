@@ -1055,21 +1055,34 @@ function Bars({ items, total, colorFor }) {
   );
 }
 
+/* Daily detail only reads at up to about a month. Past that the columns
+   are thinner than their own labels, so Body switches to the weekly view
+   instead of drawing this. Between two and four weeks the weekday name is
+   dropped and every other date is hidden, which keeps the axis legible
+   without shrinking the bars. */
+const DAY_CHART_LIMIT = 31;
+
 function DayChart({ days }) {
   if (!days.length) return null;
   const max = Math.max(...days.map((d) => d.lead + d.spam), 1);
   const avg = days.reduce((a, d) => a + d.lead, 0) / days.length;
+  const dense = days.length > 14;
+  const showEvery = days.length > 24 ? 3 : days.length > 14 ? 2 : 1;
   return (
     <div className="ff-panel">
-      <div className="ff-day-bars">
-        {days.map((d) => (
+      <div className={"ff-day-bars" + (dense ? " is-dense" : "")}>
+        {days.map((d, i) => (
           <div className="ff-day-col" key={d.day} title={`${prettyDay(d.day)}: ${d.lead} leads, ${d.spam} spam`}>
             <span className="ff-day-stack">
               <span className="ff-day-spam" style={{ height: `${(d.spam / max) * 100}%` }} />
               <span className="ff-day-lead" style={{ height: `${(d.lead / max) * 100}%` }} />
             </span>
-            <span className="ff-day-num">{d.lead}</span>
-            <span className="ff-day-label">{prettyDow(d.day)}<i>{d.day.slice(8)}</i></span>
+            {(!dense || d.lead > 0) && <span className="ff-day-num">{d.lead}</span>}
+            <span className="ff-day-label">
+              {i % showEvery === 0 ? (
+                dense ? prettyDay(d.day) : <>{prettyDow(d.day)}<i>{d.day.slice(8)}</i></>
+              ) : ""}
+            </span>
           </div>
         ))}
       </div>
@@ -1082,20 +1095,42 @@ function DayChart({ days }) {
   );
 }
 
-function WeekChart({ weeks }) {
+function WeekChart({ weeks, stacked, lastDay }) {
   if (weeks.length < 2) return null;
-  const max = Math.max(...weeks.map((w) => w.lead), 1);
+  const max = Math.max(...weeks.map((w) => (stacked ? w.lead + w.spam : w.lead)), 1);
+  const isPartial = (w) => Boolean(lastDay) && addDays(w.week, 6) > lastDay;
+  /* The average ignores a half-finished trailing week and the quiet weeks
+     before the first lead ever arrived. Including either understates it and
+     puts the tab at odds with the weekly report. */
+  const firstLive = weeks.findIndex((w) => w.lead > 0);
+  const counted = firstLive < 0 ? [] : weeks.slice(firstLive).filter((w) => !isPartial(w));
+  const avg = counted.length ? counted.reduce((a, w) => a + w.lead, 0) / counted.length : 0;
+  const partials = weeks.filter(isPartial);
+  const showEvery = weeks.length > 18 ? 2 : 1;
   return (
     <div className="ff-panel">
       <div className="ff-week-bars">
         {weeks.map((w, i) => (
-          <div className="ff-week-col" key={w.week} title={`Week of ${prettyDay(w.week)}: ${w.lead} leads`}>
-            <span style={{ height: `${(w.lead / max) * 100}%`, opacity: i === weeks.length - 1 ? 1 : 0.45 }} />
+          <div className="ff-week-col" key={w.week} title={`Week of ${prettyDay(w.week)}: ${w.lead} leads, ${w.spam} spam`}>
+            <span className={"ff-week-stack" + (isPartial(w) ? " is-partial" : "")}>
+              {stacked && <span className="ff-week-spam" style={{ height: `${(w.spam / max) * 100}%` }} />}
+              <span className="ff-week-lead" style={{ height: `${(w.lead / max) * 100}%`, opacity: i === weeks.length - 1 && !isPartial(w) ? 1 : 0.55 }} />
+            </span>
             <span className="ff-week-num">{w.lead}</span>
-            <span className="ff-week-label">{prettyDay(w.week)}</span>
+            <span className="ff-week-label">{i % showEvery === 0 ? prettyDay(w.week) : ""}</span>
           </div>
         ))}
       </div>
+      <div className="ff-legend">
+        <span><i style={{ background: "#F38637" }} />Genuine leads</span>
+        {stacked && <span><i style={{ background: "rgba(46,38,34,.22)" }} />Spam</span>}
+        <span className="ff-legend-avg">Average {avg.toFixed(1)} leads a week</span>
+      </div>
+      {partials.length > 0 && (
+        <p className="ff-note">
+          Week of {prettyDay(partials[0].week)} is still in progress &mdash; marked with a dotted cap, and left out of the average.
+        </p>
+      )}
     </div>
   );
 }
@@ -1298,6 +1333,14 @@ export default function FormFills() {
     return d.length ? [d[0], d[d.length - 1]] : [null, null];
   }, [entries]);
 
+  /* The last week the data actually covers end to end. */
+  const anchorWeek = useMemo(() => {
+    if (!weeks.length) return null;
+    const lastDay = daySpan[1];
+    const complete = weeks.filter((w) => addDays(w, 6) <= lastDay);
+    return complete.length ? complete[complete.length - 1] : weeks[weeks.length - 1];
+  }, [weeks, daySpan]);
+
   const [from, to] = useMemo(() => {
     if (!weeks.length) return [null, null];
     if (custom) {
@@ -1305,11 +1348,13 @@ export default function FormFills() {
       return a <= b ? [a, b] : [b, a];
     }
     if (preset === "all") return [null, null];
-    const last = weeks[weeks.length - 1];
-    if (preset === "week") return [last, addDays(last, 6)];
+    const last = anchorWeek;
+    const end = addDays(last, 6);
+    if (preset === "week") return [last, end];
     const n = preset === "4" ? 4 : 8;
-    return [weeks[Math.max(0, weeks.length - n)], addDays(last, 6)];
-  }, [weeks, preset, custom]);
+    const i = weeks.indexOf(last);
+    return [weeks[Math.max(0, (i < 0 ? weeks.length - 1 : i) - (n - 1))], end];
+  }, [weeks, preset, custom, anchorWeek]);
 
   const s = useMemo(() => summarise(entries, from, to), [entries, from, to]);
   const period = from ? rangeText(from, to) : daySpan[0] ? rangeText(daySpan[0], daySpan[1]) : "All time";
@@ -1349,13 +1394,25 @@ export default function FormFills() {
         <Kpi label="Internal tests" value={s.counts.test.toLocaleString()} sub="excluded from leads" />
       </div>
 
-      <h3 className="ff-h3">Submissions by day</h3>
-      <DayChart days={s.days} />
-
-      {s.weeks.length > 1 && (
+      {s.days.length <= DAY_CHART_LIMIT ? (
         <>
-          <h3 className="ff-h3">Leads by week</h3>
-          <WeekChart weeks={s.weeks} />
+          <h3 className="ff-h3">Submissions by day</h3>
+          <DayChart days={s.days} />
+          {s.weeks.length > 1 && (
+            <>
+              <h3 className="ff-h3">Leads by week</h3>
+              <WeekChart weeks={s.weeks} lastDay={daySpan[1]} />
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <h3 className="ff-h3">Submissions by week</h3>
+          <WeekChart weeks={s.weeks} stacked lastDay={daySpan[1]} />
+          <p className="ff-note">
+            {s.days.length} days in range &mdash; too many to read one bar at a time, so this is by week.
+            Pick a shorter period for the daily view.
+          </p>
         </>
       )}
 
@@ -1630,25 +1687,33 @@ const FF_CSS = `
 .ff-kpi-sub{margin-top:6px;font-size:11.5px;color:rgba(46,38,34,.45)}
 
 .ff-h3{margin:32px 0 12px;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(46,38,34,.45)}
-.ff-panel{padding:18px 18px 14px;border:1px solid var(--line);border-radius:12px;background:#fff}
-.ff-day-bars{display:flex;align-items:flex-end;gap:6px;height:170px}
-.ff-day-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.ff-panel{padding:18px 18px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.ff-day-bars{display:flex;align-items:flex-end;justify-content:center;gap:6px;height:170px;min-width:0}
+.ff-day-bars.is-dense{gap:3px}
+.ff-day-bars.is-dense .ff-day-num{font-size:9px}
+.ff-day-bars.is-dense .ff-day-label{font-size:8px;white-space:nowrap;transform:rotate(-45deg);transform-origin:top center;height:14px}
+.ff-day-col{flex:1 1 0;min-width:0;max-width:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
 .ff-day-stack{display:flex;flex-direction:column-reverse;justify-content:flex-start;width:100%;flex:1;min-height:0}
 .ff-day-lead{width:100%;background:#0598A6;border-radius:3px 3px 0 0;min-height:2px}
 .ff-day-spam{width:100%;background:rgba(46,38,34,.22)}
 .ff-day-num{margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500}
 .ff-day-label{margin-top:2px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:rgba(46,38,34,.4)}
 .ff-day-label i{display:block;font-style:normal;color:rgba(46,38,34,.3)}
-.ff-legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:rgba(46,38,34,.5)}
+.ff-legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:22px;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:rgba(46,38,34,.5)}
 .ff-legend span{display:flex;align-items:center;gap:6px}
 .ff-legend i{width:10px;height:10px;border-radius:3px;display:block}
 .ff-legend-avg{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(46,38,34,.4)}
 
-.ff-week-bars{display:flex;align-items:flex-end;gap:8px;height:150px}
-.ff-week-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
-.ff-week-col>span:first-child{width:100%;background:#F38637;border-radius:3px 3px 0 0;min-height:2px}
+.ff-week-bars{display:flex;align-items:flex-end;justify-content:center;gap:6px;height:170px;min-width:0}
+.ff-week-col{flex:1 1 0;min-width:0;max-width:110px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.ff-week-stack{display:flex;flex-direction:column-reverse;justify-content:flex-start;width:100%;flex:1;min-height:0}
+.ff-week-lead{width:100%;background:#F38637;border-radius:3px 3px 0 0;min-height:2px}
+.ff-week-spam{width:100%;background:rgba(46,38,34,.22)}
+.ff-week-stack.is-partial .ff-week-lead,.ff-week-stack.is-partial .ff-week-spam{
+  background-image:repeating-linear-gradient(45deg,rgba(250,247,241,.65),rgba(250,247,241,.65) 3px,transparent 3px,transparent 6px)}
+.ff-week-stack.is-partial::before{content:'';display:block;width:100%;border-top:2px dotted rgba(46,38,34,.3);margin-bottom:2px}
 .ff-week-num{margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500}
-.ff-week-label{margin-top:2px;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:rgba(46,38,34,.4)}
+.ff-week-label{margin-top:2px;font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:rgba(46,38,34,.4);white-space:nowrap;transform:rotate(-45deg);transform-origin:top center;height:14px}
 
 .ff-two{display:grid;grid-template-columns:1fr 1fr;gap:26px}
 .ff-bars{display:flex;flex-direction:column;gap:6px}
