@@ -1,29 +1,33 @@
 MOSAIC GRID — combined update
 ==============================
 
+This zip supersedes the last two. If you never got those in, this one
+has everything: the Form Fills chart cleanup, the benchmark panel, and
+the new entry detail drawer and filters.
+
 Two files in src/:
 
-    FormFills.jsx    REPLACES the existing one (chart cleanup)
-    Benchmarks.jsx   NEW (benchmark panel in the grid's cell drawer)
+    FormFills.jsx    REPLACES the existing one
+    Benchmarks.jsx   NEW
 
 
 STEP 1 — upload
 ---------------
 Add file -> Upload files, drag in the "src" folder, commit once.
-
-GitHub will show two files staged. Check the paths read exactly:
+Two files staged. Paths must read:
 
     src/FormFills.jsx
     src/Benchmarks.jsx
 
-FormFills.jsx will ask you to confirm an overwrite. That is correct.
+FormFills.jsx asks you to confirm an overwrite. That is correct.
 
 
 STEP 2 — two edits to src/App.jsx
 ----------------------------------
-Only needed for the benchmark panel. Form Fills works without this.
+Only needed for the benchmark panel in the grid. Form Fills works
+without this step.
 
-Open src/App.jsx and click the pencil icon.
+Open src/App.jsx, click the pencil icon.
 
 Edit A — the import.
 Line 1 currently reads:
@@ -35,7 +39,7 @@ Put this on the line directly below it:
     import BenchmarkPanel from "./Benchmarks.jsx";
 
 Edit B — where the panel appears.
-Ctrl+F inside the editor (Cmd+F on Mac) and search for:
+Ctrl+F inside the editor (Cmd+F on Mac), search for:
 
     Leads by week
 
@@ -54,47 +58,66 @@ the wrong place. The new line must sit immediately above the line you
 searched for, inside the same block.
 
 
-HOW TO TELL IT WORKED
----------------------
-Form Fills, click "All time": you should see sixteen weekly bars, not
-a hundred daily ones, and "Average 25.6 leads a week" rather than
-"Average 3.5 leads a day".
+NEW — click any entry for the full record
+------------------------------------------
+Rows in the Entries table are now clickable. A drawer slides in with:
 
-Form Fills on open: should land on Aug 10-16 showing 29 leads and 58%
-signal quality, not an empty week.
+  - who it was, the company, and the time it landed
+  - the path and category they picked
+  - the channel, and WHY it was attributed that way, in words
+    ("Decided on: referred by google.com", "utm_source=relinkonline")
+  - the landing page URL
+  - the email as a clickable mailto link
+  - the full message they wrote
+  - for spam, the reason it was filtered
 
-Mosaic Grid: click the Disposition / Google Ads cell. Under the KPIs
-there should be a "How this compares" panel.
+Newer / Older buttons walk the list without closing, and the arrow
+keys do the same. Escape closes.
 
-If any of those still look old, it is caching, not code. Hard refresh
-with Ctrl+Shift+R, and check the Netlify deploy actually finished
-green rather than failing and leaving the previous build live.
+Important: the built-in sample has no contact details in it, so the
+drawer will say "Contact details withheld" until you import the real
+WPForms export in this tab. That is the privacy design working, not a
+bug. The drawer says so on screen.
 
 
-WHAT CHANGED — FormFills.jsx
------------------------------
+NEW — filtering the entries
+----------------------------
+Under the Leads / Spam / Tests pills:
+
+  - a search box covering name, email, company, message, path,
+    category, channel and spam reason
+  - a channel dropdown
+  - a path dropdown
+  - a count showing how many of the total match
+
+The dropdowns only offer values that exist in the selected date range,
+so a filter never returns an empty list by surprise. The Newer/Older
+buttons stay inside whatever you have filtered to, so you can filter to
+Buy equipment and walk just those.
+
+
+FORM FILLS — chart cleanup
+---------------------------
 1. Ranges over 31 days show submissions by week, not by day. The daily
-   chart was drawing 110 columns into a fixed panel and running off
-   the edge.
+   chart was drawing 110 columns into a fixed panel.
 2. Two to four week ranges thin their own labels instead of shrinking
    the bars.
-3. "Latest week" now means the last COMPLETE Monday-to-Sunday week. An
+3. "Latest week" means the last COMPLETE Monday-to-Sunday week. An
    export pulled on a Monday carries one stray day of the new week and
    the tab was opening on it, showing 0 leads and looking broken.
 4. An in-progress week gets a dotted cap and is excluded from the
    weekly average.
-5. The weekly average also ignores the quiet weeks before the first
-   lead arrived. It now reads 25.6 leads a week, in line with the
-   running average in the PDF. It previously read 19.2, which
-   understated the channel.
+5. The weekly average ignores the quiet weeks before the first lead
+   arrived. It now reads 25.6 leads a week, in line with the running
+   average in the PDF. It previously read 19.2.
 6. A single-day range no longer stretches one bar across the panel.
 
 Classification is untouched. Aug 10-16 still reads 29 leads, 21 spam,
 0 tests, 58% signal quality, 24 sell / 2 buy.
 
 
-WHAT CHANGED — Benchmarks.jsx
-------------------------------
+BENCHMARKS IN THE GRID
+-----------------------
 Click any grid cell and a "How this compares" panel shows each metric
 against the range the market sits in, with a marker for where reLink
 is and a plain-English line on what the metric means.
@@ -109,19 +132,27 @@ Rows only appear when the cell can answer them. Small samples get
 flagged in bold rather than carrying a verdict.
 
 These are B2B and medical device benchmarks, not patient-facing
-healthcare ones -- reLink sells to health systems and equipment
-vendors, so clinic-to-patient figures would set the wrong bar. Every
-metric prints its source in the panel footnote.
+healthcare ones. Every metric prints its source in the footnote. To
+change a number, edit the BENCHMARKS object at the top of the file.
 
-To change a number, edit the BENCHMARKS object at the top of the file.
-Each entry has "weak" and "good" thresholds and the three coloured
-bands are drawn from those two numbers.
+
+HOW TO TELL IT ALL WORKED
+--------------------------
+- Form Fills, All time: sixteen weekly bars, "Average 25.6 leads a
+  week". Not a hundred daily ones at 3.5 a day.
+- Form Fills on open: Aug 10-16, 29 leads, 58% signal quality.
+- Form Fills: click any row in the Entries table -> drawer opens.
+- Mosaic Grid: click the Disposition / Google Ads cell -> "How this
+  compares" sits under the KPIs.
+
+If any of that still looks old, it is caching, not code. Hard refresh
+with Ctrl+Shift+R and check the Netlify deploy finished green — a
+failed build leaves the previous version live.
 
 
 STILL PENDING
 -------------
-Five files sitting in the repo root doing nothing. Delete when
-convenient -- click each, trash icon, commit:
+Five files in the repo root doing nothing. Delete when convenient:
 
     FormFills.jsx    Shell.jsx    forms.js    main.jsx
     READ-ME-FIRST.txt
