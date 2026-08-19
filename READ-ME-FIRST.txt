@@ -1,71 +1,83 @@
-BENCHMARKS + SALES LIBRARY LINK — done for you
-===============================================
+CALENDAR TAB
+=============
 
-No hand edits this time. Both files are complete and ready.
+Four files. Two new, two replaced. No hand edits.
 
-    src/App.jsx        REPLACES yours — the three edits are already in
-    src/Benchmarks.jsx REPLACES yours — adds the Tool Kit panel
+    src/Calendar.jsx              NEW
+    src/Shell.jsx                 REPLACES yours (adds the third tab)
+    netlify/functions/calendar.js NEW
+    package.json                  REPLACES yours (adds lucide-react)
 
 
 UPLOAD
 ------
-Add file -> Upload files, drag in the "src" folder, commit once.
-Two files staged, both asking to overwrite. Both correct.
+Add file -> Upload files. Drag in BOTH folders at once:
 
-Paths must read:
+    src
+    netlify
 
-    src/App.jsx
-    src/Benchmarks.jsx
+...and then drag package.json in as well, or do it as a second
+upload. Commit.
 
+Staged paths must read:
 
-WHAT I CHANGED IN App.jsx
---------------------------
-Your uploaded copy had no BenchmarkPanel in it at all, which is why
-nothing was showing anywhere. Three changes, nothing else touched:
+    src/Calendar.jsx
+    src/Shell.jsx
+    netlify/functions/calendar.js
+    package.json
 
-1. Line 2 — the import:
-       import BenchmarkPanel from "./Benchmarks.jsx";
+Shell.jsx and package.json will ask to overwrite. Both correct.
 
-2. Line ~1059 — the empty-cell branch. Report() returned early for
-   cells with no data, so the Sales Tool Kit cells never reached the
-   panel. The early return is now wrapped and includes it.
+Netlify runs npm install on the next build and picks up lucide-react
+on its own. Nothing to configure.
 
-3. Line ~1091 — the panel on cells that do have data, sitting under
-   the KPIs and above the weekly trend.
-
-Everything else in your file is untouched. Your CAMPAIGN_RULES, SEED
-data, CSS and layout are exactly as you uploaded them.
+No new environment variable. calendar.js reuses MOSAIC_WRITE_KEY.
 
 
-WHAT YOU SHOULD SEE
--------------------
-Click Disposition / Google Ads: under the KPIs, a "How this compares"
-panel. CTR 1.52% below benchmark, cost per click $0.77 ahead of it,
-cost per lead $58 in range, ROAS 3.6x in range.
+WHAT CHANGED FROM YOUR VERSION
+-------------------------------
+Your calendar used window.storage, which exists inside Claude
+artifacts and nowhere else. On Netlify there is no such object, so
+every read and write would have thrown and the calendar would have
+looked permanently empty. It now talks to /api/calendar, backed by
+the same Netlify Blobs store the grid and Form Fills use.
 
-Click any cell in the Sales Tool Kit row: a "Where the material lives"
-panel with a link to the Sales Library and the tag to filter to.
+Everything about the design is yours. What is different underneath:
 
-Both verified in a browser against your actual file before packaging.
+1. Images are fetched per entry, not all at once. A month of social
+   posts is a lot of base64 to pull down on every page load for cards
+   nobody opened.
+
+2. Writes ask for the passphrase -- the same one the grid uses -- once
+   per session rather than every change. Without it, anyone who found
+   the URL could quietly delete a month of planning. Reading needs
+   nothing, so Jeff and Gregory can look without a passphrase.
+
+3. Saves write to the server first, then update the screen. Your
+   version updated the screen first, which meant a failed save left
+   you looking at an entry that did not exist for anyone else.
+
+4. alert() replaced with an inline message in the dialog.
+
+5. Font set to Source Sans 3 to match the other two tabs.
+
+6. Old entry types (email_buyer, auction, linkedin and so on) migrate
+   forward on read, same as your version did.
 
 
-TAG MAPPING, GRID -> LIBRARY
------------------------------
-    reLink Ready    -> reLink Ready
-    Transactional   -> Transactional
-    reLink360       -> Consignment
-    Net New         -> Net New
+WHERE IT LIVES
+--------------
+    marketing-grid.netlify.app             the grid
+    marketing-grid.netlify.app/#forms      form fills
+    marketing-grid.netlify.app/#calendar   the calendar
 
-    Disposition     -> not mapped
-    MEV             -> not mapped
-    Brand           -> not mapped
-
-Unmapped ones still get the link, without a tag hint. Tell me what
-those three should point at and it is one line each — TOOLKIT_TAG near
-the top of Benchmarks.jsx.
+Every write is backed up under calendar/backup/<timestamp>, so a bad
+delete is recoverable.
 
 
-ALSO
-----
-READ-ME-FIRST.txt is sitting in your repo root again from the last
-folder drag. Harmless, delete when convenient.
+WORTH KNOWING
+-------------
+The passphrase stops anonymous edits, not determined ones -- it is
+checked server-side but the site itself still has no login. Same
+open question as the lead contact details. Netlify Identity closes
+both at once.

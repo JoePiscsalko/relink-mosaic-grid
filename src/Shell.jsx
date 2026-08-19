@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import App from "./App.jsx";
 import FormFills from "./FormFills.jsx";
+import Calendar from "./Calendar.jsx";
 
 /* ==================================================================
    SHELL — the tab strip, and nothing else.
@@ -10,16 +11,22 @@ import FormFills from "./FormFills.jsx";
    which one is on screen, and keeps that in the URL hash so a link
    can point straight at either.
 
-     marketing-grid.netlify.app        the grid
-     marketing-grid.netlify.app/#forms the form fills report
+     marketing-grid.netlify.app           the grid
+     marketing-grid.netlify.app/#forms    the form fills report
+     marketing-grid.netlify.app/#calendar the marketing calendar
 ================================================================== */
 
 const TABS = [
   { key: "grid", label: "Mosaic Grid", hash: "" },
   { key: "forms", label: "Form Fills", hash: "#forms" },
+  { key: "calendar", label: "Calendar", hash: "#calendar" },
 ];
 
-const tabFromHash = () => (typeof window !== "undefined" && window.location.hash === "#forms" ? "forms" : "grid");
+const tabFromHash = () => {
+  if (typeof window === "undefined") return "grid";
+  const hit = TABS.find((t) => t.hash && t.hash === window.location.hash);
+  return hit ? hit.key : "grid";
+};
 
 export default function Shell() {
   const [tab, setTab] = useState(tabFromHash);
@@ -58,7 +65,7 @@ export default function Shell() {
           ))}
         </div>
       </nav>
-      {tab === "forms" ? <FormFills /> : <App />}
+      {tab === "forms" ? <FormFills /> : tab === "calendar" ? <Calendar /> : <App />}
     </>
   );
 }
