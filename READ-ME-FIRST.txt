@@ -1,69 +1,34 @@
-FORM FILLS TAB — upload instructions
-====================================
+FORM FILLS — sample data update
+================================
 
-GitHub will not unzip a zip file. Unzip this on your machine first,
-then drag the FOLDERS into GitHub. Dragging a folder keeps the paths;
-dragging loose files does not, which is what went wrong last time.
+One file changes: src/FormFills.jsx
 
-STEP 1 — clear the four stray files from the repo root
-------------------------------------------------------
-In relink-mosaic-grid, these are currently sitting in the root and
-need to go. For each one: click it, then the trash icon, then
-Commit changes.
+Upload
+------
+Add file -> Upload files, drag in the "src" folder, commit.
+It replaces the existing src/FormFills.jsx. Nothing else moves.
 
-    FormFills.jsx
-    Shell.jsx
-    forms.js
-    main.jsx
+What changed
+------------
+The tab now opens with a built-in sample: the classified output of the
+August 17 export, covering April 30 through August 17 — sixteen weeks,
+552 submissions.
 
-Nothing breaks while you do this. The grid does not reference any of
-them yet.
+Every identifying field was stripped before it went into the file. No
+names, no emails, no company names, no message text. What remains is
+the shape: when each submission arrived, what it asked for, where it
+came from, and whether it was genuine. That is all the charts need,
+and it is safe in a public repo.
 
-STEP 2 — upload the two folders together
------------------------------------------
-Add file  ->  Upload files
+Import a fresh export any time and it replaces the sample entirely.
 
-Drag BOTH of these folders into the drop area at the same time:
+Cleanup still pending
+---------------------
+Five files are sitting in the repo root doing nothing. Delete when
+convenient — click each, trash icon, commit:
 
-    src
-    netlify
+    FormFills.jsx    Shell.jsx    forms.js    main.jsx
+    READ-ME-FIRST.txt
 
-GitHub will show four files staged at these paths. Check the paths
-read exactly like this before committing:
-
-    src/FormFills.jsx
-    src/Shell.jsx
-    src/main.jsx           <- replaces the existing file, this is correct
-    netlify/functions/forms.js
-
-Commit once. One commit means the build never sees a half-finished
-state.
-
-STEP 3 — confirm
-----------------
-src/ should now hold four files:
-
-    App.jsx        (untouched)
-    FormFills.jsx
-    Shell.jsx
-    main.jsx
-
-netlify/functions/ should hold two:
-
-    data.js        (untouched)
-    forms.js
-
-Netlify redeploys on the commit. When it finishes, a tab strip appears
-at the top of the grid. Form Fills lives at:
-
-    marketing-grid.netlify.app/#forms
-
-No new environment variable. forms.js reuses MOSAIC_WRITE_KEY, so the
-same passphrase publishes both tabs.
-
-If the drag does not work
--------------------------
-Some browsers block folder drag-and-drop. Fall back to uploading the
-four files loose, then rename each one to add its folder: click the
-file, the pencil icon, and type the folder plus a slash in front of
-the filename. Save main.jsx for last.
+The real copies live in src/ and netlify/functions/. The build never
+looks at the root ones.
