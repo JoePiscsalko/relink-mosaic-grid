@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import BenchmarkPanel from "./Benchmarks.jsx";
 
 /* ==================================================================
    MOSAIC GRID — SBU x channel performance, filterable by date
@@ -1050,10 +1051,13 @@ export default function App() {
       const ctr = t.reach ? (t.clicks / t.reach) * 100 : null;
       if (!cell)
         return (
-          <div className="mg-dr-empty">
-            <p>{NO_DATA[key] || `Nothing for ${s.name} on ${ch.name} in this range.`}</p>
-            <p className="mg-dr-empty-sub">{filtering ? "Widen the date range, or import a file covering these weeks." : "Import a file with rows for this pair."}</p>
-          </div>
+          <>
+            <div className="mg-dr-empty">
+              <p>{NO_DATA[key] || `Nothing for ${s.name} on ${ch.name} in this range.`}</p>
+              <p className="mg-dr-empty-sub">{filtering ? "Widen the date range, or import a file covering these weeks." : "Import a file with rows for this pair."}</p>
+            </div>
+            <BenchmarkPanel channel={ch} sbu={s} totals={t} />
+          </>
         );
       return (
         <>
@@ -1084,6 +1088,7 @@ export default function App() {
               </p>
             );
           })()}
+          <BenchmarkPanel channel={ch} sbu={s} totals={t} />
           {cell.trend && (<><h3 className="mg-dr-h3">Leads by week</h3><TrendChart data={cell.trend} color={color} /></>)}
           {!cell.dated && <p className="mg-note">These rows carry no dates, so the range filter doesn&rsquo;t apply to them.</p>}
           <h3 className="mg-dr-h3">{ch.kind === "email" ? "Emails" : "Campaigns"}</h3>

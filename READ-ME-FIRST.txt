@@ -1,66 +1,71 @@
-SALES TOOL KIT — link through to the Sales Library
-===================================================
+BENCHMARKS + SALES LIBRARY LINK — done for you
+===============================================
 
-One file changes, plus one word added to a line of App.jsx you have
-already edited once.
+No hand edits this time. Both files are complete and ready.
 
-
-STEP 1 — upload
----------------
-Add file -> Upload files, drag in the "src" folder, commit.
-Replaces src/Benchmarks.jsx. Confirm the overwrite.
+    src/App.jsx        REPLACES yours — the three edits are already in
+    src/Benchmarks.jsx REPLACES yours — adds the Tool Kit panel
 
 
-STEP 2 — one word in src/App.jsx
----------------------------------
-Open src/App.jsx, pencil icon, Ctrl+F for:
+UPLOAD
+------
+Add file -> Upload files, drag in the "src" folder, commit once.
+Two files staged, both asking to overwrite. Both correct.
 
-    BenchmarkPanel
+Paths must read:
 
-You are looking for the line you added earlier:
-
-      <BenchmarkPanel channel={ch} totals={t} />
-
-Change it to:
-
-      <BenchmarkPanel channel={ch} sbu={s} totals={t} />
-
-That is the whole edit -- sbu={s} added in the middle. It passes the
-business unit through so the panel knows which library tag to name.
-
-Commit changes.
+    src/App.jsx
+    src/Benchmarks.jsx
 
 
-WHAT YOU GET
-------------
-Click any cell in the Sales Tool Kit row and the drawer shows a
-"Where the material lives" panel with a link straight to the Sales
-Library, plus the tag to filter to once you are in.
+WHAT I CHANGED IN App.jsx
+--------------------------
+Your uploaded copy had no BenchmarkPanel in it at all, which is why
+nothing was showing anywhere. Three changes, nothing else touched:
 
-Tag mapping, grid -> library:
+1. Line 2 — the import:
+       import BenchmarkPanel from "./Benchmarks.jsx";
 
+2. Line ~1059 — the empty-cell branch. Report() returned early for
+   cells with no data, so the Sales Tool Kit cells never reached the
+   panel. The early return is now wrapped and includes it.
+
+3. Line ~1091 — the panel on cells that do have data, sitting under
+   the KPIs and above the weekly trend.
+
+Everything else in your file is untouched. Your CAMPAIGN_RULES, SEED
+data, CSS and layout are exactly as you uploaded them.
+
+
+WHAT YOU SHOULD SEE
+-------------------
+Click Disposition / Google Ads: under the KPIs, a "How this compares"
+panel. CTR 1.52% below benchmark, cost per click $0.77 ahead of it,
+cost per lead $58 in range, ROAS 3.6x in range.
+
+Click any cell in the Sales Tool Kit row: a "Where the material lives"
+panel with a link to the Sales Library and the tag to filter to.
+
+Both verified in a browser against your actual file before packaging.
+
+
+TAG MAPPING, GRID -> LIBRARY
+-----------------------------
     reLink Ready    -> reLink Ready
     Transactional   -> Transactional
     reLink360       -> Consignment
     Net New         -> Net New
 
-    Disposition     -> no library tag yet
-    MEV             -> no library tag yet
-    Brand           -> no library tag yet
+    Disposition     -> not mapped
+    MEV             -> not mapped
+    Brand           -> not mapped
 
-The three unmapped ones still get the link, just without a tag hint.
-They are unmapped on purpose: the library does not carry a matching
-tag and pointing an AE at the wrong shelf is worse than not pointing.
-
-If you tell me what Disposition, MEV and Brand should map to, it is a
-one-line change each -- see TOOLKIT_TAG at the top of Benchmarks.jsx.
+Unmapped ones still get the link, without a tag hint. Tell me what
+those three should point at and it is one line each — TOOLKIT_TAG near
+the top of Benchmarks.jsx.
 
 
-WHY IT DOES NOT OPEN PRE-FILTERED
-----------------------------------
-The Sales Library holds its SBU filter in app state, not in the URL,
-so there is no address to point at that arrives filtered. Making that
-work means a change in the relink-sales-play repo: read a query
-parameter on load and set the filter from it. Perhaps twenty minutes,
-and a second deploy. Worth doing if AEs will use this often; the tag
-hint covers it in the meantime.
+ALSO
+----
+READ-ME-FIRST.txt is sitting in your repo root again from the last
+folder drag. Harmless, delete when convenient.
