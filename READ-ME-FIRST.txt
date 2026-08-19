@@ -1,34 +1,81 @@
-FORM FILLS — sample data update
-================================
+BENCHMARKS IN THE CELL DRAWER
+==============================
 
-One file changes: src/FormFills.jsx
+This one needs two small edits to App.jsx as well as the new file.
+The new file does all the work; the edits just switch it on.
 
-Upload
-------
+STEP 1 — upload the new file
+-----------------------------
 Add file -> Upload files, drag in the "src" folder, commit.
-It replaces the existing src/FormFills.jsx. Nothing else moves.
+Adds src/Benchmarks.jsx. Nothing is replaced.
 
-What changed
+STEP 2 — two edits to src/App.jsx
+----------------------------------
+Open src/App.jsx, click the pencil icon.
+
+Edit A — the import.
+Line 1 currently reads:
+
+    import React, { useState, useMemo, useEffect, useRef } from "react";
+
+Put this on the line directly below it:
+
+    import BenchmarkPanel from "./Benchmarks.jsx";
+
+Edit B — where the panel appears.
+Use Ctrl+F (Cmd+F on Mac) inside the editor and search for:
+
+    Leads by week
+
+You want the line that reads, in full:
+
+          {cell.trend && (<><h3 className="mg-dr-h3">Leads by week</h3><TrendChart data={cell.trend} color={color} /></>)}
+
+Add this on its own line DIRECTLY ABOVE that line:
+
+          <BenchmarkPanel channel={ch} totals={t} />
+
+Commit changes.
+
+That is the whole integration. If Netlify reports a build error, it is
+almost always Edit B landing in the wrong spot — the line must sit
+inside the same block as the one you searched for, not above the
+function or after the closing brace.
+
+WHAT YOU GET
 ------------
-The tab now opens with a built-in sample: the classified output of the
-August 17 export, covering April 30 through August 17 — sixteen weeks,
-552 submissions.
+Click any cell in the grid and, under the KPIs, a "How this compares"
+panel shows each metric against the range the market sits in, with a
+marker for where reLink actually is and a plain-English sentence
+saying what the metric means.
 
-Every identifying field was stripped before it went into the file. No
-names, no emails, no company names, no message text. What remains is
-the shape: when each submission arrived, what it asked for, where it
-came from, and whether it was genuine. That is all the charts need,
-and it is safe in a public repo.
+Metrics by channel:
 
-Import a fresh export any time and it replaces the sample entirely.
+  Google Ads     click-through rate, cost per click, conversion rate,
+                 cost per lead, return on ad spend
+  Paid Social    click-through rate, cost per click, CPM, cost per lead
+  Email          open rate, click rate, click-to-open rate,
+                 unsubscribe rate
+  Display        click-through rate, cost per click, cost per lead
 
-Cleanup still pending
----------------------
-Five files are sitting in the repo root doing nothing. Delete when
-convenient — click each, trash icon, commit:
+Rows only appear when the cell can actually answer them, so no row of
+dashes. Where the sample is small — under ten leads, under a thousand
+impressions — the panel says so in bold rather than letting a verdict
+rest on four clicks.
 
-    FormFills.jsx    Shell.jsx    forms.js    main.jsx
-    READ-ME-FIRST.txt
+The panel also prints, so the PDF export off a cell carries it.
 
-The real copies live in src/ and netlify/functions/. The build never
-looks at the root ones.
+ON THE NUMBERS
+--------------
+These are B2B and medical device benchmarks, not patient-facing
+healthcare ones. Most published "healthcare marketing" data describes
+clinics advertising to patients — a different auction with different
+economics. reLink sells to health systems and equipment vendors, so
+those figures would set the wrong bar in both directions.
+
+Every metric carries its source, and the sources print in the panel
+footnote so nobody has to take them on faith.
+
+To change a number, edit the BENCHMARKS object at the top of
+Benchmarks.jsx. Each entry has "weak" and "good" thresholds; the three
+coloured bands are drawn from those two numbers.
