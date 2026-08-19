@@ -249,8 +249,68 @@ function Row({ m, t }) {
   );
 }
 
+
+/* ==================================================================
+   SALES TOOL KIT — the one cell with no numbers in it
+
+   The Tool Kit row has no spend and no impressions, so a benchmark
+   panel would be four dashes. What is actually useful here is a way
+   through to the material itself.
+
+   The Sales Library filters by SBU in the app rather than in the URL,
+   so this cannot yet open pre-filtered. Until it can, the panel names
+   the tag to pick on arrival, which beats dropping someone into a
+   library of a hundred cards with no bearings.
+
+   The two apps also name their business units differently. Where the
+   grid says reLink360 the library says Consignment. TOOLKIT_TAG maps
+   between them and deliberately leaves the three with no counterpart
+   unmapped — better a plain link than a confident wrong one.
+------------------------------------------------------------------- */
+
+const LIBRARY_URL = "https://relink-sales-play.netlify.app/";
+
+const TOOLKIT_TAG = {
+  ready:  "reLink Ready",
+  trans:  "Transactional",
+  r360:   "Consignment",
+  netnew: "Net New",
+  /* disp, mev and brand have no library tag yet — they fall through
+     to a plain link rather than pointing somewhere wrong. */
+};
+
+function ToolkitPanel({ sbu }) {
+  const tag = sbu ? TOOLKIT_TAG[sbu.key] : null;
+  return (
+    <div className="bm">
+      <style>{BM_CSS}</style>
+      <div className="bm-head">
+        <h3 className="bm-title">Where the material lives</h3>
+      </div>
+
+      <p className="tk-lead">
+        {tag
+          ? <>The Sales Library holds the play and the customer-facing material for this unit. Filter to the <b>{tag}</b> tag once you are in.</>
+          : <>The Sales Library holds the plays and the customer-facing material the AE team carries.</>}
+      </p>
+
+      <a className="tk-btn" href={LIBRARY_URL} target="_blank" rel="noopener noreferrer">
+        Open the Sales Library &rarr;
+      </a>
+
+      <p className="bm-foot">
+        Sign-in required, restricted to @relinkmedical.com addresses. Sales Play is training
+        material; Sales Tool Kit is what goes to the customer. Anything marked Internal Only
+        stays inside the building.
+      </p>
+    </div>
+  );
+}
+
 /* ---------------- panel ---------------- */
-export default function BenchmarkPanel({ channel, totals }) {
+export default function BenchmarkPanel({ channel, totals, sbu }) {
+  if (channel?.key === "toolkit") return <ToolkitPanel sbu={sbu} />;
+
   const list = BENCHMARKS[channel?.key];
   if (!list || !totals) return null;
 
@@ -326,8 +386,16 @@ const BM_CSS = `
 .bm-sources li{position:relative;padding:0 0 0 12px;margin-bottom:5px;line-height:1.55}
 .bm-sources li::before{content:'';position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:rgba(46,38,34,.22)}
 
+.tk-lead{margin:16px 0 0;font-size:14px;line-height:1.6;color:rgba(46,38,34,.7)}
+.tk-lead b{font-weight:700;color:#2E2622}
+.tk-btn{display:inline-block;margin-top:16px;padding:10px 22px;border-radius:999px;background:#F38637;color:#fff;
+  font-family:'Source Sans 3',sans-serif;font-size:13.5px;font-weight:600;text-decoration:none;transition:background .16s ease}
+.tk-btn:hover{background:#e0752a}
+.tk-btn:focus-visible{outline:2px solid #0598A6;outline-offset:2px}
+
 @media print{
   .bm{break-inside:avoid;border:1px solid rgba(46,38,34,.2)}
+  .tk-btn{border:1px solid rgba(46,38,34,.3);color:#2E2622;background:transparent}
   .bm-row{break-inside:avoid}
   .bm-plain{font-size:10px}
   .bm-foot{font-size:8.5px}

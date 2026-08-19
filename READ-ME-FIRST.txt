@@ -1,0 +1,66 @@
+SALES TOOL KIT — link through to the Sales Library
+===================================================
+
+One file changes, plus one word added to a line of App.jsx you have
+already edited once.
+
+
+STEP 1 — upload
+---------------
+Add file -> Upload files, drag in the "src" folder, commit.
+Replaces src/Benchmarks.jsx. Confirm the overwrite.
+
+
+STEP 2 — one word in src/App.jsx
+---------------------------------
+Open src/App.jsx, pencil icon, Ctrl+F for:
+
+    BenchmarkPanel
+
+You are looking for the line you added earlier:
+
+      <BenchmarkPanel channel={ch} totals={t} />
+
+Change it to:
+
+      <BenchmarkPanel channel={ch} sbu={s} totals={t} />
+
+That is the whole edit -- sbu={s} added in the middle. It passes the
+business unit through so the panel knows which library tag to name.
+
+Commit changes.
+
+
+WHAT YOU GET
+------------
+Click any cell in the Sales Tool Kit row and the drawer shows a
+"Where the material lives" panel with a link straight to the Sales
+Library, plus the tag to filter to once you are in.
+
+Tag mapping, grid -> library:
+
+    reLink Ready    -> reLink Ready
+    Transactional   -> Transactional
+    reLink360       -> Consignment
+    Net New         -> Net New
+
+    Disposition     -> no library tag yet
+    MEV             -> no library tag yet
+    Brand           -> no library tag yet
+
+The three unmapped ones still get the link, just without a tag hint.
+They are unmapped on purpose: the library does not carry a matching
+tag and pointing an AE at the wrong shelf is worse than not pointing.
+
+If you tell me what Disposition, MEV and Brand should map to, it is a
+one-line change each -- see TOOLKIT_TAG at the top of Benchmarks.jsx.
+
+
+WHY IT DOES NOT OPEN PRE-FILTERED
+----------------------------------
+The Sales Library holds its SBU filter in app state, not in the URL,
+so there is no address to point at that arrives filtered. Making that
+work means a change in the relink-sales-play repo: read a query
+parameter on load and set the filter from it. Perhaps twenty minutes,
+and a second deploy. Worth doing if AEs will use this often; the tag
+hint covers it in the meantime.
