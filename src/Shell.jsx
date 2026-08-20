@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import App from "./App.jsx";
 import FormFills from "./FormFills.jsx";
 import Calendar from "./Calendar.jsx";
+import CampaignBuilder from "./CampaignBuilder.jsx";
 
 /* ==================================================================
    SHELL — the tab strip, and nothing else.
@@ -14,12 +15,14 @@ import Calendar from "./Calendar.jsx";
      marketing-grid.netlify.app           the grid
      marketing-grid.netlify.app/#forms    the form fills report
      marketing-grid.netlify.app/#calendar the marketing calendar
+     marketing-grid.netlify.app/#builder  the campaign builder
 ================================================================== */
 
 const TABS = [
   { key: "grid", label: "Mosaic Grid", hash: "" },
   { key: "forms", label: "Form Fills", hash: "#forms" },
   { key: "calendar", label: "Calendar", hash: "#calendar" },
+  { key: "builder", label: "Campaign Builder", hash: "#builder" },
 ];
 
 const tabFromHash = () => {
@@ -65,7 +68,10 @@ export default function Shell() {
           ))}
         </div>
       </nav>
-      {tab === "forms" ? <FormFills /> : tab === "calendar" ? <Calendar /> : <App />}
+      {tab === "forms" ? <FormFills />
+        : tab === "calendar" ? <Calendar />
+        : tab === "builder" ? <CampaignBuilder />
+        : <App />}
     </>
   );
 }

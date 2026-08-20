@@ -1,83 +1,112 @@
-CALENDAR TAB
-=============
+CAMPAIGN BUILDER TAB
+=====================
 
-Four files. Two new, two replaced. No hand edits.
+Upload this AFTER the calendar zip. Shell.jsx here has all four tabs
+in it; the calendar version has three. Doing them the other way round
+loses the builder tab.
 
-    src/Calendar.jsx              NEW
-    src/Shell.jsx                 REPLACES yours (adds the third tab)
-    netlify/functions/calendar.js NEW
-    package.json                  REPLACES yours (adds lucide-react)
+    src/CampaignBuilder.jsx        NEW
+    src/Shell.jsx                  REPLACES yours (four tabs)
+    netlify/functions/campaign.js  NEW
 
 
-UPLOAD
-------
-Add file -> Upload files. Drag in BOTH folders at once:
+STEP 1 — the API key
+---------------------
+Netlify -> Site configuration -> Environment variables -> Add
+
+    Key    ANTHROPIC_API_KEY
+    Value  your key from console.anthropic.com
+
+Then Deploys -> Trigger deploy -> Clear cache and deploy site.
+Environment variables only take effect on the next build.
+
+The key is read server-side inside the function. It is never sent to
+the browser and never goes in the repo.
+
+No second passphrase. The builder reuses MOSAIC_WRITE_KEY.
+
+
+STEP 2 — upload
+----------------
+Add file -> Upload files, drag in BOTH folders:
 
     src
     netlify
 
-...and then drag package.json in as well, or do it as a second
-upload. Commit.
-
-Staged paths must read:
-
-    src/Calendar.jsx
-    src/Shell.jsx
-    netlify/functions/calendar.js
-    package.json
-
-Shell.jsx and package.json will ask to overwrite. Both correct.
-
-Netlify runs npm install on the next build and picks up lucide-react
-on its own. Nothing to configure.
-
-No new environment variable. calendar.js reuses MOSAIC_WRITE_KEY.
+Commit. Shell.jsx overwrites; that is correct.
 
 
-WHAT CHANGED FROM YOUR VERSION
--------------------------------
-Your calendar used window.storage, which exists inside Claude
-artifacts and nowhere else. On Netlify there is no such object, so
-every read and write would have thrown and the calendar would have
-looked permanently empty. It now talks to /api/calendar, backed by
-the same Netlify Blobs store the grid and Form Fills use.
+HOW IT WORKS
+------------
+An SBU leader fills in a short brief: unit, what to promote, goal,
+audience, channels, optional budget and timeframe.
 
-Everything about the design is yours. What is different underneath:
+Before anything is sent anywhere, the browser assembles evidence from
+data already in this app:
 
-1. Images are fetched per entry, not all at once. A month of social
-   posts is a lot of base64 to pull down on every page load for cards
-   nobody opened.
+  - keywords for that unit matching the focus, with real spend,
+    conversions and CPL, split into converting and not
+  - keywords burning money with no conversions, as negative candidates
+  - channel performance for that unit from the grid
+  - inbound demand from the contact wizard: how many leads asked for
+    this, through which channels, in which categories
 
-2. Writes ask for the passphrase -- the same one the grid uses -- once
-   per session rather than every change. Without it, anyone who found
-   the URL could quietly delete a month of planning. Reading needs
-   nothing, so Jeff and Gregory can look without a passphrase.
+That panel renders immediately and costs nothing. It is worth reading
+on its own.
 
-3. Saves write to the server first, then update the screen. Your
-   version updated the screen first, which meant a failed save left
-   you looking at an entry that did not exist for anyone else.
+Only then does Generate send the brief plus that evidence to the
+model, which returns:
 
-4. alert() replaced with an inline message in the dialog.
+  1. Where this stands today
+  2. Keywords — already converting vs worth adding, plus negatives
+  3. Campaign structure — Google ad groups and budget, LinkedIn
+     targeting with an audience size check, email placement
+  4. Ad copy and subject lines — RSA headlines and descriptions with
+     character counts, LinkedIn variants, 5 subject lines
+  5. Landing page brief — slug, H1, sections, CTA, proof, FAQ
+  6. A complete SFMC-ready email as an HTML block
 
-5. Font set to Source Sans 3 to match the other two tabs.
-
-6. Old entry types (email_buyer, auction, linkedin and so on) migrate
-   forward on read, same as your version did.
+Two download buttons: the whole plan as markdown, and the email HTML
+on its own.
 
 
-WHERE IT LIVES
+WHY IT STREAMS
 --------------
-    marketing-grid.netlify.app             the grid
-    marketing-grid.netlify.app/#forms      form fills
-    marketing-grid.netlify.app/#calendar   the calendar
-
-Every write is backed up under calendar/backup/<timestamp>, so a bad
-delete is recoverable.
+A Netlify function has ten seconds to respond and this takes longer.
+The limit applies to the first byte, not the last, so the response is
+piped through as it is written. You watch the plan appear instead of
+watching a spinner.
 
 
-WORTH KNOWING
+ON THE OUTPUT
 -------------
-The passphrase stops anonymous edits, not determined ones -- it is
-checked server-side but the site itself still has no login. Same
-open question as the lead contact details. Netlify Identity closes
-both at once.
+The model is instructed never to invent a number. Figures in the plan
+come from the evidence, and anything it cannot source it is told to
+flag rather than estimate. It is also told to separate what already
+converts from what it is proposing — evidence versus hypothesis.
+
+That instruction reduces invention. It does not eliminate it. Check
+the numbers in a plan before it goes to Jeff or Gregory, particularly
+any figure that sounds better than you expected.
+
+The LinkedIn section carries a hard-coded warning about the $2,336 on
+274 people at a $1,523 CPM, so every plan has to state a minimum
+viable audience size.
+
+
+COST
+----
+Each Generate is one API call, roughly 6,000 tokens in and up to
+8,000 out. Pennies per run at Sonnet pricing, but it is not free and
+the site has no login — the passphrase is the only thing between the
+URL and your API balance. Every run is logged to the blob store under
+campaign/runs with a timestamp, the name entered and the focus, so a
+runaway is visible.
+
+
+IF THE PLAN LOOKS THIN
+-----------------------
+It reflects the evidence. A unit with no keyword data gets proposals
+only, and the plan says so. Import a Google Ads search keyword report
+on the grid tab and publish the form fills data, and the same brief
+produces a much sharper answer.
