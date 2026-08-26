@@ -1,59 +1,74 @@
-CAMPAIGN FUNCTION — SYNTAX FIX
-===============================
+CAMPAIGN BUILDER — the timeout fix
+===================================
 
-One file:
+Two files:
 
+    src/CampaignBuilder.jsx
     netlify/functions/campaign.js
 
-Add file -> Upload files, drag in the "netlify" folder, commit.
-Overwrites the broken one. Nothing else changes.
+Add file -> Upload files, drag in BOTH folders, commit.
+No environment variables. No hand edits.
 
 
 WHAT WAS WRONG
 --------------
-My fault, and a silly one.
+Duration: 60000 ms. That is Netlify's hard ceiling, hit exactly.
 
-When I rewrote the prompt to be strategy-led rather than keyword-led,
-the replacement left a doubled backtick where the prompt text ends:
+I built this on a wrong assumption. I thought streaming would get
+around the function time limit because the ten-second rule applies to
+the first byte. It does — but there is a separate 60 second cap on
+total duration, and streaming does nothing about that. A full campaign
+plan plus an email sequence takes several minutes to write, so it was
+killed every time with nothing to show for it.
 
-    ...rather than repeating it.``;
-
-That closed the prompt string and immediately opened a new one, which
-then ran on until it hit the next backtick 60 lines further down. The
-file stopped being valid JavaScript from that point.
-
-Netlify could not parse it, so it fell back to loading the raw file as
-CommonJS, which is why the crash page said "Cannot use import
-statement outside a module" and pointed at line 1. That message was a
-symptom. The real fault was one character.
-
-It also explains the empty function log: the crash happened at module
-load, before any of the code that logs ran.
+Worth saying plainly: that was a design error on my part, not a
+misconfiguration on yours. The two earlier failures were a syntax slip
+and this. Both mine.
 
 
-HOW IT IS VERIFIED THIS TIME
------------------------------
-Parsing alone was clearly not enough, so the handler was loaded and
-run against every path:
+HOW IT WORKS NOW
+----------------
+The plan is written in five passes instead of one:
 
-    config path        /api/campaign
-    no API key         500, names the variable
-    wrong passphrase   401
-    empty brief        400
-    GET                405
-    streaming          200, text/plain, text arrives intact
+    1. the idea, and who you're talking to        2,600 tokens
+    2. the offer and the channel plan             2,800
+    3. the copy                                   2,800
+    4. keywords, landing page, measurement        2,800
+    5. the emails                                 3,800
 
-All four functions in the repo were syntax-checked. calendar.js and
-forms.js were already fine; only campaign.js was broken.
+Each pass is small enough to land well inside 60 seconds. Each one
+receives the brief plus everything written so far, so section four
+answers to section one rather than drifting off on its own. The
+browser stitches them into a single document, and the pack export is
+unchanged.
+
+You will see "2 of 5 · the offer and channel plan" next to the
+heading as it goes. Expect roughly two minutes end to end.
+
+If a pass fails, the sections already written stay on screen and the
+error says which one stopped. You are never left with a blank page
+after a minute of waiting.
+
+Total output budget is 14,800 tokens across the five calls, so cost
+per plan is around 15 cents. Unchanged in practice.
 
 
-AFTER UPLOADING
----------------
-Wait for the deploy to finish green, then check:
+VERIFIED THIS TIME
+------------------
+The handler was loaded and run, not just parsed:
 
-    marketing-grid.netlify.app/api/campaign
+    each stage requests the right size and carries prior context
+    unknown stage        400
+    no API key           500
+    wrong passphrase     401
+    empty brief          400
+    GET                  405
+    out of credit        502, says so
+    key rejected         502, says so
+    rate limited         502, says so
+    90k of prior text    trimmed to fit, not rejected
 
-You should see {"error":"Method not allowed."} — that is the function
-answering a GET, which proves it loads and routes.
-
-Then hit Generate.
+That last set matters: restoring the staged code accidentally removed
+the helper that builds error responses, so every failure path would
+have thrown instead of returning a message. Running it caught that.
+Parsing alone would not have.

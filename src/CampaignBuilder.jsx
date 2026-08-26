@@ -650,6 +650,7 @@ export default function CampaignBuilder() {
   const [out, setOut] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [stage, setStage] = useState(0);
   const abortRef = useRef(null);
   const outRef = useRef(null);
 
@@ -674,47 +675,72 @@ export default function CampaignBuilder() {
   const toggleIn = (field, value) =>
     setForm((f) => ({ ...f, [field]: f[field].includes(value) ? f[field].filter((x) => x !== value) : [...f[field], value] }));
 
+  /* Five passes, not one. A Netlify function is killed at 60 seconds and a
+     whole campaign takes minutes to write, so it is written in sections and
+     stitched together here. Each pass is handed everything written so far. */
+  const STAGE_LABELS = ["the idea", "the offer and channel plan", "the copy", "keywords and landing page", "the emails"];
+
+  const runStage = async (n, prior, key, ctrl) => {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        key, stage: n, prior, by: form.by, focus: form.focus,
+        brief: evidenceToText(ev, form, sbuName),
+      }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      const err = new Error(j.error || `Stage ${n} didn't come back.`);
+      err.status = res.status;
+      throw err;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = dec.decode(value, { stream: true });
+      text += chunk;
+      setOut((p) => p + chunk);
+      if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;
+    }
+    return text;
+  };
+
   const generate = async (retry = true) => {
     if (!form.focus.trim()) { setError("Say what you want to promote first."); return; }
     const key = writeKey || askKey();
     if (!key) return;
 
-    setError(null); setBusy(true); setOut("");
+    setError(null); setBusy(true); setOut(""); setStage(1);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
+    let assembled = "";
     try {
-      const res = await fetch(API, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          key, by: form.by, focus: form.focus,
-          brief: evidenceToText(ev, form, sbuName),
-        }),
-      });
-
-      if (res.status === 401 && retry) {
-        forgetKey(); setBusy(false);
+      for (let n = 1; n <= 5; n++) {
+        setStage(n);
+        if (n > 1) { setOut((p) => p + "\n\n"); assembled += "\n\n"; }
+        const text = await runStage(n, assembled, key, ctrl);
+        assembled += text;
+      }
+      setStage(0);
+    } catch (e) {
+      if (e.name === "AbortError") { setBusy(false); setStage(0); return; }
+      if (e.status === 401 && retry) {
+        forgetKey(); setBusy(false); setStage(0);
         if (askKey("That passphrase didn't match. Try again:")) return generate(false);
         return;
       }
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || "That didn't work.");
-      }
-
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = dec.decode(value, { stream: true });
-        setOut((p) => p + chunk);
-        if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;
-      }
-    } catch (e) {
-      if (e.name !== "AbortError") setError(e.message || "That didn't work.");
+      setError(
+        assembled
+          ? `${e.message || "That didn't work."} The sections written before it are still below.`
+          : (e.message || "That didn't work.")
+      );
+      setStage(0);
     }
     setBusy(false);
   };
@@ -834,6 +860,7 @@ export default function CampaignBuilder() {
             </div>
             <p className="cb-fine">
               {loading ? "Loading your grid and lead data\u2026"
+                : busy ? "Written in five passes so each one lands inside the server's time limit. Takes a couple of minutes."
                 : "The brief and the evidence below are what get sent. Nothing else leaves the browser."}
             </p>
           </div>
@@ -844,7 +871,11 @@ export default function CampaignBuilder() {
             {(out || busy) && (
               <div className="cb-plan">
                 <div className="cb-plan-head">
-                  <h3 className="cb-h3">The plan{busy && <i className="cb-dot" />}</h3>
+                  <h3 className="cb-h3">
+                    The plan
+                    {busy && <i className="cb-dot" />}
+                    {busy && stage > 0 && <em className="cb-stage">{stage} of 5 &middot; {STAGE_LABELS[stage - 1]}</em>}
+                  </h3>
                   <div className="cb-plan-btns">
                     {out && !busy && (
                       <button className="cb-mini is-primary"
@@ -941,6 +972,7 @@ const CB_CSS = `
 .cb-plan-head .cb-h3{margin-bottom:0;display:flex;align-items:center;gap:8px}
 .cb-plan-btns{display:flex;gap:6px}
 .cb-dot{width:7px;height:7px;border-radius:50%;background:#F38637;animation:cbpulse 1.1s ease-in-out infinite}
+.cb-stage{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:none;color:rgba(46,38,34,.4)}
 @keyframes cbpulse{0%,100%{opacity:.25}50%{opacity:1}}
 .cb-mini{padding:5px 12px;border:1px solid rgba(46,38,34,.18);border-radius:999px;background:#fff;font-family:inherit;font-size:11.5px;font-weight:600;color:rgba(46,38,34,.6);cursor:pointer}
 .cb-mini:hover{border-color:#2E2622;color:#2E2622}
