@@ -345,6 +345,223 @@ function Markdown({ text }) {
   return <>{blocks}</>;
 }
 
+
+/* ---------------- the campaign pack ----------------
+   A markdown file is a working note. What an SBU leader needs is
+   something they can open, read, hand to someone, and print to PDF —
+   with the emails actually rendered rather than shown as source.
+
+   So the pack is one self-contained HTML file: the plan typeset, the
+   LinkedIn captions in copy blocks, and every email both previewed in
+   an iframe and available as source. No dependencies, no server. It
+   opens in a browser and prints clean.
+-------------------------------------------------- */
+const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/* Pull the emails out, keeping the label line that precedes each. */
+function extractEmails(md) {
+  const out = [];
+  const rx = /```html\s*([\s\S]*?)```/gi;
+  let m;
+  while ((m = rx.exec(md))) {
+    const before = md.slice(0, m.index).split("\n").filter((l) => l.trim()).slice(-4);
+    const label = before.reverse().find((l) => /^\*\*Email\s/i.test(l.trim()));
+    out.push({
+      html: m[1].trim(),
+      label: label ? label.replace(/\*\*/g, "").trim() : `Email ${out.length + 1}`,
+    });
+  }
+  return out;
+}
+
+/* Minimal markdown to HTML, matching what the on-screen renderer
+   handles. Fenced html blocks are dropped here — they come back as
+   rendered previews further down the document. */
+function mdToHtml(md) {
+  const lines = md.split("\n");
+  const out = [];
+  let i = 0;
+  const inl = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const body = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) { body.push(lines[i]); i++; }
+      i++;
+      if (!/^html$/i.test(lang)) out.push(`<pre class="code">${esc(body.join("\n"))}</pre>`);
+      continue;
+    }
+
+    if (/^\|.*\|/.test(line) && /^\|[\s:|-]+\|$/.test(lines[i + 1] || "")) {
+      const cells = (l) => l.split("|").slice(1, -1).map((c) => c.trim());
+      const head = cells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /^\|.*\|/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+      out.push(`<table><thead><tr>${head.map((h) => `<th>${inl(h)}</th>`).join("")}</tr></thead><tbody>${
+        rows.map((r) => `<tr>${r.map((c) => `<td>${inl(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+      continue;
+    }
+
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { out.push(`<h${Math.min(h[1].length + 1, 4)}>${inl(h[2])}</h${Math.min(h[1].length + 1, 4)}>`); i++; continue; }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i++; }
+      out.push(`<ul>${items.map((t) => `<li>${inl(t)}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++; }
+      out.push(`<ol>${items.map((t) => `<li>${inl(t)}</li>`).join("")}</ol>`);
+      continue;
+    }
+    if (line.startsWith(">")) { out.push(`<blockquote>${inl(line.replace(/^>\s?/, ""))}</blockquote>`); i++; continue; }
+    if (!line.trim()) { i++; continue; }
+
+    const para = [lines[i]];
+    i++;
+    while (i < lines.length && lines[i].trim() && !/^[#>|`]/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i])) { para.push(lines[i]); i++; }
+    out.push(`<p>${inl(para.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+
+function buildPack({ md, form, sbuName, ev }) {
+  const emails = extractEmails(md);
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+  const emailSections = emails.map((e, n) => `
+    <section class="email" id="email-${n + 1}">
+      <div class="email-head">
+        <h3>${esc(e.label)}</h3>
+        <div class="email-btns">
+          <button onclick="copyEmail(${n})">Copy HTML</button>
+          <button onclick="downloadEmail(${n})">Download .html</button>
+        </div>
+      </div>
+      <div class="email-frame"><iframe srcdoc="${esc(e.html)}" title="${esc(e.label)}"></iframe></div>
+      <details><summary>View source</summary><pre class="code" id="src-${n}">${esc(e.html)}</pre></details>
+    </section>`).join("");
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${esc(form.focus)} — campaign pack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{--esp:#2E2622;--cream:#FAF7F1;--orange:#F38637;--teal:#0598A6;--olive:#90AD51;--line:rgba(46,38,34,.14)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--esp);font-family:'Source Sans 3',ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:860px;margin:0 auto;padding:48px 32px 80px}
+.cover{padding-bottom:26px;margin-bottom:34px;border-bottom:3px solid var(--orange)}
+.eyebrow{margin:0 0 10px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal)}
+h1{margin:0;font-size:40px;font-weight:300;letter-spacing:-.028em;line-height:1.05}
+h1 b{font-weight:700;color:var(--orange)}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.meta span{padding:5px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px}
+.meta span i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(46,38,34,.4);margin-right:7px}
+h2{margin:38px 0 12px;font-size:12px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--teal);padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{margin:26px 0 9px;font-size:17px;font-weight:700;letter-spacing:-.015em}
+h4{margin:20px 0 7px;font-size:14px;font-weight:700}
+p{margin:0 0 12px;font-size:15px;line-height:1.68}
+ul,ol{margin:0 0 14px;padding-left:22px}
+li{margin-bottom:6px;font-size:14.5px;line-height:1.6}
+blockquote{margin:0 0 14px;padding:11px 16px;border-left:3px solid var(--orange);background:rgba(243,134,55,.08);border-radius:0 8px 8px 0;font-size:14px}
+code{font-family:'IBM Plex Mono',monospace;font-size:12.5px;background:rgba(46,38,34,.07);padding:2px 5px;border-radius:4px}
+pre.code{margin:0;padding:14px;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:auto;max-height:400px;
+  font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13.5px;background:#fff}
+th{text-align:left;padding:9px 12px;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(46,38,34,.45);border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid rgba(46,38,34,.09);vertical-align:top;line-height:1.5}
+td:first-child{font-weight:600}
+.evidence{padding:18px 20px;margin-bottom:8px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.evidence h2{margin-top:0}
+.ev-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.ev-grid div{padding:12px 13px;border:1px solid var(--line);border-radius:10px}
+.ev-grid span{display:block;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:rgba(46,38,34,.42)}
+.ev-grid b{display:block;margin-top:6px;font-size:21px;letter-spacing:-.03em}
+.email{margin:22px 0 30px;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.email-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--line);background:rgba(46,38,34,.03)}
+.email-head h3{margin:0;font-size:14.5px}
+.email-btns{display:flex;gap:6px}
+button{padding:6px 14px;border:1px solid var(--line);border-radius:999px;background:#fff;font-family:inherit;font-size:12px;font-weight:600;color:rgba(46,38,34,.7);cursor:pointer}
+button:hover{border-color:var(--esp);color:var(--esp)}
+.email-frame{padding:18px;background:#F2EEE6}
+iframe{width:100%;height:640px;border:1px solid var(--line);border-radius:8px;background:#fff}
+details{padding:12px 16px;border-top:1px solid var(--line)}
+summary{cursor:pointer;font-size:12.5px;font-weight:600;color:rgba(46,38,34,.55)}
+details pre{margin-top:11px}
+.foot{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:9px;
+  letter-spacing:.1em;text-transform:uppercase;line-height:1.8;color:rgba(46,38,34,.4)}
+@media print{
+  @page{size:letter portrait;margin:.55in}
+  body{background:#fff}
+  .wrap{max-width:none;padding:0}
+  .email-btns,summary{display:none}
+  details{display:none}
+  .email,section,table,iframe{break-inside:avoid}
+  iframe{height:560px}
+}
+</style></head>
+<body><div class="wrap">
+
+<div class="cover">
+  <p class="eyebrow">reLink Medical &middot; campaign pack</p>
+  <h1>${esc(form.focus)}<b>.</b></h1>
+  <div class="meta">
+    <span><i>Unit</i>${esc(sbuName)}</span>
+    <span><i>Goal</i>${esc((form.goal || "").replace(/^\w/, (c) => c.toUpperCase()))}</span>
+    ${form.timeframe ? `<span><i>Timeframe</i>${esc(form.timeframe)}</span>` : ""}
+    ${form.budget ? `<span><i>Budget</i>${esc(form.budget)}</span>` : ""}
+    ${form.audiences.length ? `<span><i>Audience</i>${esc(form.audiences.join(", "))}</span>` : ""}
+    <span><i>Prepared</i>${esc(when)}</span>
+    ${form.by ? `<span><i>By</i>${esc(form.by)}</span>` : ""}
+  </div>
+</div>
+
+<div class="evidence">
+  <h2>What the data said going in</h2>
+  <div class="ev-grid">
+    <div><span>Matching leads</span><b>${ev.usedAllLeads ? 0 : ev.focusLeads}</b></div>
+    <div><span>Converting keywords</span><b>${ev.converting.length}</b></div>
+    <div><span>Spend, no conversions</span><b>${ev.dead.length ? money0(ev.dead.reduce((a, k) => a + k.spend, 0)) : "\u2014"}</b></div>
+    <div><span>Live channels</span><b>${Object.keys(ev.byChannel).length}</b></div>
+  </div>
+</div>
+
+${mdToHtml(md)}
+
+${emails.length ? `<h2>Emails, rendered</h2>${emailSections}` : ""}
+
+<p class="foot">
+  reLink Medical &middot; Twinsburg, Ohio &middot; prepared ${esc(when)}<br/>
+  Figures come from reLink's own campaign, keyword and contact wizard data. Strategy, copy and
+  creative are proposals and should be reviewed before anything goes live.
+</p>
+</div>
+<script>
+var EMAILS = ${JSON.stringify(emails.map((e) => e.html))};
+var LABELS = ${JSON.stringify(emails.map((e) => e.label))};
+function copyEmail(n){navigator.clipboard.writeText(EMAILS[n]).then(function(){alert('Email HTML copied.');});}
+function downloadEmail(n){
+  var b=new Blob([EMAILS[n]],{type:'text/html;charset=utf-8'});
+  var u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download=LABELS[n].toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'.html';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u);},1000);
+}
+</script>
+</body></html>`;
+}
+
 /* ---------------- evidence panel ---------------- */
 function EvidencePanel({ ev, sbuName }) {
   if (!ev) return null;
@@ -512,10 +729,7 @@ export default function CampaignBuilder() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const emailHtml = useMemo(() => {
-    const m = out.match(/```html\s*([\s\S]*?)```/i);
-    return m ? m[1].trim() : null;
-  }, [out]);
+  const emails = useMemo(() => extractEmails(out), [out]);
 
   const slug = (form.focus || "campaign").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
@@ -632,13 +846,14 @@ export default function CampaignBuilder() {
                 <div className="cb-plan-head">
                   <h3 className="cb-h3">The plan{busy && <i className="cb-dot" />}</h3>
                   <div className="cb-plan-btns">
-                    {emailHtml && (
-                      <button className="cb-mini" onClick={() => download(`relink-${slug}-email.html`, emailHtml, "text/html;charset=utf-8")}>
-                        Download email HTML
+                    {out && !busy && (
+                      <button className="cb-mini is-primary"
+                        onClick={() => download(`relink-${slug}-campaign-pack.html`, buildPack({ md: out, form, sbuName, ev }), "text/html;charset=utf-8")}>
+                        Download campaign pack{emails.length ? ` (${emails.length} email${emails.length === 1 ? "" : "s"})` : ""}
                       </button>
                     )}
                     {out && !busy && (
-                      <button className="cb-mini" onClick={() => download(`relink-${slug}-campaign.md`, out)}>Download plan</button>
+                      <button className="cb-mini" onClick={() => download(`relink-${slug}-campaign.md`, out)}>Markdown</button>
                     )}
                   </div>
                 </div>
@@ -729,6 +944,8 @@ const CB_CSS = `
 @keyframes cbpulse{0%,100%{opacity:.25}50%{opacity:1}}
 .cb-mini{padding:5px 12px;border:1px solid rgba(46,38,34,.18);border-radius:999px;background:#fff;font-family:inherit;font-size:11.5px;font-weight:600;color:rgba(46,38,34,.6);cursor:pointer}
 .cb-mini:hover{border-color:#2E2622;color:#2E2622}
+.cb-mini.is-primary{background:#F38637;border-color:#F38637;color:#fff}
+.cb-mini.is-primary:hover{background:#e0752a;border-color:#e0752a;color:#fff}
 .cb-plan-body{max-height:78vh;overflow-y:auto;padding-top:4px}
 .cb-caret{display:inline-block;width:8px;height:15px;background:#F38637;vertical-align:text-bottom;animation:cbpulse .9s ease-in-out infinite}
 

@@ -26,7 +26,7 @@ import { getStore } from "@netlify/blobs";
 ------------------------------------------------------------------- */
 
 const MODEL = "claude-sonnet-5";
-const MAX_TOKENS = 16000;
+const MAX_TOKENS = 24000;
 const STORE = "mosaic-grid";
 const MAX_BRIEF = 12000;
 
@@ -81,7 +81,13 @@ Then per channel, with real depth:
 **Organic social and sales enablement** — what the AE team gets, what goes out socially, how the two reinforce the paid spend.
 
 ## Copy
-Google RSA: 8 headlines at 30 characters or fewer, 4 descriptions at 90 or fewer, character count in brackets after each. LinkedIn: 3 variants with intro text and headline, matching the three-touch sequence above. Email: 5 subject lines with preheaders, each under 50 characters. Organic social: 2 posts. Write these as if they are shipping, not as placeholders.
+Google RSA: 8 headlines at 30 characters or fewer, 4 descriptions at 90 or fewer, character count in brackets after each.
+
+LinkedIn: write the three posts in full, one per touch in the sequence above. Each is a complete caption ready to paste — opening line that earns the scroll-stop, body with line breaks where they fall, a clear ask, and 3 to 5 hashtags. Label them Touch 1, Touch 2, Touch 3 and say what each is doing in the sequence. Do not write "intro text goes here" or leave anything to be filled in.
+
+Email: 5 subject lines with preheaders, each under 50 characters.
+
+Organic social: 2 posts for LinkedIn company page, complete captions.
 
 ## Keywords
 Two tables. "Already converting" — only keywords present in the evidence with conversions: Keyword | Spend | Conv | CPL | Action. "Worth adding" — your proposals: Keyword | Match type | Why | Intent. Then a short negatives list if the evidence shows spend with no conversions. If there is no keyword evidence, say so plainly and give proposals only, noting they need volume checking in Keyword Planner before budget goes near them.
@@ -92,7 +98,15 @@ Target URL slug under relinkmedical.com, H1, section-by-section outline with the
 ## How you'll know it worked
 Three or four numbers to watch, what good looks like for each given what the brief shows about current performance, and the point at which you would stop and rethink. Include a two-week checkpoint.
 
-Then, last, a fenced html code block containing a complete SFMC-ready email: table-based layout, all styles inline, 600px wide, the brand palette above, a pill-shaped CTA, an unsubscribe line, plain merge fields like %%FirstName%% only, and <custom name="opencounter" type="tracking"/> immediately before the closing body tag. It must carry the campaign idea and reuse one of the subject lines.``;
+## The emails
+
+Write the full email sequence described in the channel plan — two or three emails, whatever the flow calls for. For each one, first a line in this exact form:
+
+**Email 1 — <name of the send>** · Subject: <subject line> · Preheader: <preheader> · Sends: <when, relative to the campaign start>
+
+then one sentence on what this email is for and who gets it, then a fenced html code block containing the complete email.
+
+Every email must be SFMC-ready: table-based layout, all styles inline, 600px wide, the brand palette above, a pill-shaped CTA button, a plain-text preheader span hidden at the top, an unsubscribe line, plain merge fields like %%FirstName%% only, and <custom name="opencounter" type="tracking"/> immediately before the closing body tag. Real copy throughout — no lorem, no placeholders, no "insert value here". They must read as a sequence, each one moving on from the last rather than repeating it.``;
 
 export default async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);

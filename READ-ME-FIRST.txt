@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — strategy, not a keyword report
-==================================================
+CAMPAIGN BUILDER — the downloadable pack
+=========================================
 
 Two files, both replacing what is there:
 
@@ -9,90 +9,65 @@ Two files, both replacing what is there:
 Add file -> Upload files, drag in BOTH folders (src and netlify),
 commit. No new environment variables. No hand edits.
 
-
-WHAT CHANGED, AND WHY
-----------------------
-
-1. The plan is a campaign now, not a keyword audit.
-
-The old prompt led with performance data, so the model treated the
-whole job as an analytics exercise with some copy stapled on. That
-was a fault in how it was asked, not in what it can do.
-
-It now writes:
-
-  The idea             the concept, the angle, a working name, and
-                       why it lands now
-  Who you're talking to the buying situation, who signs off vs who
-                       searches, the objections that kill the deal
-  The offer            what makes someone act now, options with
-                       trade-offs, and a recommendation
-  Channel plan         sequenced week by week, then real depth per
-                       channel:
-                         Search and SEO — intent, the page to rank,
-                           what to build
-                         Google Ads — structure, budget, what to turn
-                           off to fund it
-                         LinkedIn — audience, size check, creative
-                           concept, three-touch sequence
-                         Email — where it sits in the journeys, a
-                           send-by-send flow, segmentation
-                         Organic social and sales enablement
-  Copy                 RSAs with character counts, LinkedIn variants
-                       matching the sequence, subject lines, social
-                       posts — written to ship
-  Keywords             one section now, not the whole plan
-  Landing page         slug, H1, sections, CTA, proof, FAQs, internal
-                       links
-  How you'll know      the numbers to watch, what good looks like, a
-                       two-week checkpoint and a stop condition
-  SFMC email           complete HTML block
-
-The no-invented-numbers rule still holds, and is now explicitly
-scoped to numbers. Ideas, angles and tactics it generates freely.
-
-Output limit raised from 8,000 to 16,000 tokens to fit all of it.
-Cost per run goes from roughly 6 cents to roughly 12.
+This includes everything from the last update as well, so if that one
+did not go in, this covers it.
 
 
-2. Keyword evidence no longer depends on publishing.
+THE CAMPAIGN PACK
+-----------------
+One button: "Download campaign pack". It produces a single
+self-contained HTML file the SBU leader can open, read, forward, or
+print straight to PDF. No dependencies, nothing to install.
 
-The builder read keywords from the last published dataset. A
-"Replace everything" import clears those, which is why the panel kept
-saying "No keyword data loaded" — and a campaign plan was about to be
-generated against zero performance history without flagging it.
+Inside:
 
-The 182 keywords already in App.jsx are now bundled into the builder
-as a fallback. Published data still wins; this only fills the gap.
-Nothing new is exposed — same data, same public repo, one file over.
+  - A branded cover with the unit, goal, timeframe, budget, audience,
+    who prepared it and when
+  - What the data said going in, so the plan can be judged against
+    the evidence it was built on
+  - The whole plan typeset properly -- tables, schedules, copy
+  - Every email RENDERED, not shown as code. Each one sits in a live
+    preview with its subject, preheader and send timing above it,
+    a Copy HTML button, a Download .html button, and the source
+    tucked behind a "View source" toggle
 
-Importing a fresh Google Ads keyword report still overrides it, and
-is still worth doing.
+Print to PDF and the buttons and source blocks drop out, leaving a
+clean document with the emails still rendered.
 
-
-3. The demand matcher was producing nonsense.
-
-"Removal of surgery equipment" was being split into removal, surgery,
-equipment — and "equipment" appears in nearly every path label you
-have. It matched 254 of 307 leads and presented that as demand
-evidence for surgical removal specifically.
-
-Generic words are now ignored: equipment, medical, device, system,
-unit, hospital, product and so on. The evidence panel also shows
-which words it actually matched on, so a surprising number is
-traceable rather than mysterious.
-
-If a focus contains only generic words the panel says so instead of
-quietly matching everything.
+There is still a Markdown button next to it if you want the raw text.
 
 
-WORTH KNOWING
--------------
-More output means more surface for a confident wrong statement. The
-figures are constrained to the brief, but the strategy is the model's
-own thinking and deserves the same read you would give a new agency's
-first deck: good ideas in there, and some that do not survive contact
-with what you know about the business.
+EMAILS ARE A SEQUENCE NOW
+--------------------------
+The plan used to end with one email. It now writes the full flow the
+channel plan calls for -- typically two or three -- each with its own
+label, subject, preheader, send timing, a line on who gets it and
+why, and complete HTML. They are written to follow each other rather
+than repeat.
 
-The LinkedIn audience-size warning is still hard-coded, so every plan
-has to state a minimum viable audience before recommending spend.
+Every email: table layout, inline styles, 600px, brand palette,
+pill CTA, hidden preheader span, unsubscribe line, %%FirstName%%
+merge fields, and the SFMC open tracking pixel before </body>.
+
+
+LINKEDIN POSTS ARE COMPLETE CAPTIONS
+-------------------------------------
+Three posts, one per touch in the sequence, each a full caption ready
+to paste: opening line, body with line breaks, a clear ask, and
+hashtags. The prompt explicitly forbids placeholders.
+
+Plus two organic company-page posts.
+
+
+TOKEN LIMIT
+-----------
+Raised again, to 24,000, to fit a full email sequence. Cost per run
+is now roughly 18 cents. At $25 a month that is around 140 runs.
+
+
+AN EXAMPLE
+----------
+example-campaign-pack.html, sent alongside this, is a real pack
+produced by this build. Open it in a browser to see what an SBU
+leader receives. The content is a test plan rather than a real one,
+but the format is exactly what you will get.
