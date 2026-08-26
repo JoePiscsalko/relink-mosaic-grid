@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — the timeout fix
-===================================
+CAMPAIGN BUILDER — keep-alive fix
+==================================
 
 Two files:
 
@@ -7,68 +7,48 @@ Two files:
     netlify/functions/campaign.js
 
 Add file -> Upload files, drag in BOTH folders, commit.
-No environment variables. No hand edits.
 
 
-WHAT WAS WRONG
+WHAT THE LOG SHOWED
+-------------------
+    09:47:08  Duration: 32434.69 ms
+
+Stage 1 ran for 32 seconds and finished cleanly. No crash, no timeout,
+well inside the 60 second ceiling. The function did its job — the
+browser just never received it.
+
+That is a different failure from the last two. The proxy sitting in
+front of the function closes the connection to the browser if no bytes
+arrive soon enough, and this stream sent nothing at all until the model
+produced its first token. The model spends the first several seconds
+reading the brief before it writes anything, so the connection was
+being cut while the function carried on working into the void.
+
+Hence "Stage 1 didn't come back" while the log said it plainly had.
+
+
+THE FIX
+-------
+The function now sends a byte the instant the stream opens, and keeps
+sending one every three seconds until real text starts flowing. It is
+a zero-width space — invisible in the rendered plan, and the browser
+strips it anyway. It exists only to keep the pipe warm.
+
+Measured against an upstream deliberately stalled for 7 seconds:
+
+    first byte before the fix   ~7,000 ms
+    first byte after the fix        49 ms
+    text delivered intact           yes
+
+Stage errors now also report the HTTP status, so if anything else goes
+wrong the message says what happened rather than shrugging.
+
+
+WHAT TO EXPECT
 --------------
-Duration: 60000 ms. That is Netlify's hard ceiling, hit exactly.
+Generate, and within a second the heading should show
+"1 of 5 - the idea" with the pulsing dot. Text begins appearing a few
+seconds later. Five passes, roughly two minutes end to end.
 
-I built this on a wrong assumption. I thought streaming would get
-around the function time limit because the ten-second rule applies to
-the first byte. It does — but there is a separate 60 second cap on
-total duration, and streaming does nothing about that. A full campaign
-plan plus an email sequence takes several minutes to write, so it was
-killed every time with nothing to show for it.
-
-Worth saying plainly: that was a design error on my part, not a
-misconfiguration on yours. The two earlier failures were a syntax slip
-and this. Both mine.
-
-
-HOW IT WORKS NOW
-----------------
-The plan is written in five passes instead of one:
-
-    1. the idea, and who you're talking to        2,600 tokens
-    2. the offer and the channel plan             2,800
-    3. the copy                                   2,800
-    4. keywords, landing page, measurement        2,800
-    5. the emails                                 3,800
-
-Each pass is small enough to land well inside 60 seconds. Each one
-receives the brief plus everything written so far, so section four
-answers to section one rather than drifting off on its own. The
-browser stitches them into a single document, and the pack export is
-unchanged.
-
-You will see "2 of 5 · the offer and channel plan" next to the
-heading as it goes. Expect roughly two minutes end to end.
-
-If a pass fails, the sections already written stay on screen and the
-error says which one stopped. You are never left with a blank page
-after a minute of waiting.
-
-Total output budget is 14,800 tokens across the five calls, so cost
-per plan is around 15 cents. Unchanged in practice.
-
-
-VERIFIED THIS TIME
-------------------
-The handler was loaded and run, not just parsed:
-
-    each stage requests the right size and carries prior context
-    unknown stage        400
-    no API key           500
-    wrong passphrase     401
-    empty brief          400
-    GET                  405
-    out of credit        502, says so
-    key rejected         502, says so
-    rate limited         502, says so
-    90k of prior text    trimmed to fit, not rejected
-
-That last set matters: restoring the staged code accidentally removed
-the helper that builds error responses, so every failure path would
-have thrown instead of returning a message. Running it caught that.
-Parsing alone would not have.
+If a pass still fails, whatever was written stays on screen and the
+error names the stage and the status code.

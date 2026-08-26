@@ -692,7 +692,7 @@ export default function CampaignBuilder() {
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      const err = new Error(j.error || `Stage ${n} didn't come back.`);
+      const err = new Error(j.error || `Stage ${n} didn't come back (HTTP ${res.status}).`);
       err.status = res.status;
       throw err;
     }
@@ -702,7 +702,8 @@ export default function CampaignBuilder() {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = dec.decode(value, { stream: true });
+      const chunk = dec.decode(value, { stream: true }).replace(/\u200b/g, "");
+      if (!chunk) continue;          /* keep-alive only, nothing to show yet */
       text += chunk;
       setOut((p) => p + chunk);
       if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;

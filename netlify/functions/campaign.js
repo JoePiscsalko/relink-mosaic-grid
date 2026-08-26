@@ -230,6 +230,22 @@ export default async (req) => {
 
   const out = new ReadableStream({
     async start(controller) {
+      /* Send something immediately, and keep sending while we wait.
+
+         The proxy in front of a function will close the connection to the
+         browser if no bytes arrive soon enough, and the model produces
+         nothing for the first few seconds while it reads the brief. The
+         function itself completes fine — the browser just never sees it.
+
+         A zero-width space is invisible once rendered and the client strips
+         it anyway. It exists only to keep the pipe warm. */
+      const HEARTBEAT = "\u200b";
+      controller.enqueue(encoder.encode(HEARTBEAT));
+      let alive = true;
+      const beat = setInterval(() => {
+        if (alive) { try { controller.enqueue(encoder.encode(HEARTBEAT)); } catch (e) { /* closed */ } }
+      }, 3000);
+
       const reader = upstream.body.getReader();
       try {
         for (;;) {
@@ -244,16 +260,20 @@ export default async (req) => {
             if (!raw || raw === "[DONE]") continue;
             try {
               const ev = JSON.parse(raw);
-              if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta")
+              if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+                if (alive) { alive = false; clearInterval(beat); }
                 controller.enqueue(encoder.encode(ev.delta.text));
+              }
               if (ev.type === "error")
                 controller.enqueue(encoder.encode(`\n\n> The API stopped early: ${ev.error?.message || "unknown error"}\n`));
             } catch (e) { /* partial frame, wait for the rest */ }
           }
         }
       } catch (e) {
-        controller.enqueue(encoder.encode("\n\n> The connection dropped before the plan finished.\n"));
+        try { controller.enqueue(encoder.encode("\n\n> The connection dropped before the plan finished.\n")); } catch (e2) { /* closed */ }
       }
+      alive = false;
+      clearInterval(beat);
       controller.close();
     },
   });
