@@ -106,7 +106,7 @@ Write the full email sequence described in the channel plan — two or three ema
 
 then one sentence on what this email is for and who gets it, then a fenced html code block containing the complete email.
 
-Every email must be SFMC-ready: table-based layout, all styles inline, 600px wide, the brand palette above, a pill-shaped CTA button, a plain-text preheader span hidden at the top, an unsubscribe line, plain merge fields like %%FirstName%% only, and <custom name="opencounter" type="tracking"/> immediately before the closing body tag. Real copy throughout — no lorem, no placeholders, no "insert value here". They must read as a sequence, each one moving on from the last rather than repeating it.``;
+Every email must be SFMC-ready: table-based layout, all styles inline, 600px wide, the brand palette above, a pill-shaped CTA button, a plain-text preheader span hidden at the top, an unsubscribe line, plain merge fields like %%FirstName%% only, and <custom name="opencounter" type="tracking"/> immediately before the closing body tag. Real copy throughout — no lorem, no placeholders, no "insert value here". They must read as a sequence, each one moving on from the last rather than repeating it.`;
 
 export default async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);

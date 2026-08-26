@@ -1,73 +1,59 @@
-CAMPAIGN BUILDER — the downloadable pack
-=========================================
+CAMPAIGN FUNCTION — SYNTAX FIX
+===============================
 
-Two files, both replacing what is there:
+One file:
 
-    src/CampaignBuilder.jsx
     netlify/functions/campaign.js
 
-Add file -> Upload files, drag in BOTH folders (src and netlify),
-commit. No new environment variables. No hand edits.
-
-This includes everything from the last update as well, so if that one
-did not go in, this covers it.
+Add file -> Upload files, drag in the "netlify" folder, commit.
+Overwrites the broken one. Nothing else changes.
 
 
-THE CAMPAIGN PACK
------------------
-One button: "Download campaign pack". It produces a single
-self-contained HTML file the SBU leader can open, read, forward, or
-print straight to PDF. No dependencies, nothing to install.
+WHAT WAS WRONG
+--------------
+My fault, and a silly one.
 
-Inside:
+When I rewrote the prompt to be strategy-led rather than keyword-led,
+the replacement left a doubled backtick where the prompt text ends:
 
-  - A branded cover with the unit, goal, timeframe, budget, audience,
-    who prepared it and when
-  - What the data said going in, so the plan can be judged against
-    the evidence it was built on
-  - The whole plan typeset properly -- tables, schedules, copy
-  - Every email RENDERED, not shown as code. Each one sits in a live
-    preview with its subject, preheader and send timing above it,
-    a Copy HTML button, a Download .html button, and the source
-    tucked behind a "View source" toggle
+    ...rather than repeating it.``;
 
-Print to PDF and the buttons and source blocks drop out, leaving a
-clean document with the emails still rendered.
+That closed the prompt string and immediately opened a new one, which
+then ran on until it hit the next backtick 60 lines further down. The
+file stopped being valid JavaScript from that point.
 
-There is still a Markdown button next to it if you want the raw text.
+Netlify could not parse it, so it fell back to loading the raw file as
+CommonJS, which is why the crash page said "Cannot use import
+statement outside a module" and pointed at line 1. That message was a
+symptom. The real fault was one character.
+
+It also explains the empty function log: the crash happened at module
+load, before any of the code that logs ran.
 
 
-EMAILS ARE A SEQUENCE NOW
---------------------------
-The plan used to end with one email. It now writes the full flow the
-channel plan calls for -- typically two or three -- each with its own
-label, subject, preheader, send timing, a line on who gets it and
-why, and complete HTML. They are written to follow each other rather
-than repeat.
+HOW IT IS VERIFIED THIS TIME
+-----------------------------
+Parsing alone was clearly not enough, so the handler was loaded and
+run against every path:
 
-Every email: table layout, inline styles, 600px, brand palette,
-pill CTA, hidden preheader span, unsubscribe line, %%FirstName%%
-merge fields, and the SFMC open tracking pixel before </body>.
+    config path        /api/campaign
+    no API key         500, names the variable
+    wrong passphrase   401
+    empty brief        400
+    GET                405
+    streaming          200, text/plain, text arrives intact
 
-
-LINKEDIN POSTS ARE COMPLETE CAPTIONS
--------------------------------------
-Three posts, one per touch in the sequence, each a full caption ready
-to paste: opening line, body with line breaks, a clear ask, and
-hashtags. The prompt explicitly forbids placeholders.
-
-Plus two organic company-page posts.
+All four functions in the repo were syntax-checked. calendar.js and
+forms.js were already fine; only campaign.js was broken.
 
 
-TOKEN LIMIT
------------
-Raised again, to 24,000, to fit a full email sequence. Cost per run
-is now roughly 18 cents. At $25 a month that is around 140 runs.
+AFTER UPLOADING
+---------------
+Wait for the deploy to finish green, then check:
 
+    marketing-grid.netlify.app/api/campaign
 
-AN EXAMPLE
-----------
-example-campaign-pack.html, sent alongside this, is a real pack
-produced by this build. Open it in a browser to see what an SBU
-leader receives. The content is a test plan rather than a real one,
-but the format is exactly what you will get.
+You should see {"error":"Method not allowed."} — that is the function
+answering a GET, which proves it loads and routes.
+
+Then hit Generate.
