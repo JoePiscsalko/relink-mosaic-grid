@@ -1,112 +1,98 @@
-CAMPAIGN BUILDER TAB
-=====================
+CAMPAIGN BUILDER — strategy, not a keyword report
+==================================================
 
-Upload this AFTER the calendar zip. Shell.jsx here has all four tabs
-in it; the calendar version has three. Doing them the other way round
-loses the builder tab.
+Two files, both replacing what is there:
 
-    src/CampaignBuilder.jsx        NEW
-    src/Shell.jsx                  REPLACES yours (four tabs)
-    netlify/functions/campaign.js  NEW
+    src/CampaignBuilder.jsx
+    netlify/functions/campaign.js
 
-
-STEP 1 — the API key
----------------------
-Netlify -> Site configuration -> Environment variables -> Add
-
-    Key    ANTHROPIC_API_KEY
-    Value  your key from console.anthropic.com
-
-Then Deploys -> Trigger deploy -> Clear cache and deploy site.
-Environment variables only take effect on the next build.
-
-The key is read server-side inside the function. It is never sent to
-the browser and never goes in the repo.
-
-No second passphrase. The builder reuses MOSAIC_WRITE_KEY.
+Add file -> Upload files, drag in BOTH folders (src and netlify),
+commit. No new environment variables. No hand edits.
 
 
-STEP 2 — upload
-----------------
-Add file -> Upload files, drag in BOTH folders:
+WHAT CHANGED, AND WHY
+----------------------
 
-    src
-    netlify
+1. The plan is a campaign now, not a keyword audit.
 
-Commit. Shell.jsx overwrites; that is correct.
+The old prompt led with performance data, so the model treated the
+whole job as an analytics exercise with some copy stapled on. That
+was a fault in how it was asked, not in what it can do.
 
+It now writes:
 
-HOW IT WORKS
-------------
-An SBU leader fills in a short brief: unit, what to promote, goal,
-audience, channels, optional budget and timeframe.
+  The idea             the concept, the angle, a working name, and
+                       why it lands now
+  Who you're talking to the buying situation, who signs off vs who
+                       searches, the objections that kill the deal
+  The offer            what makes someone act now, options with
+                       trade-offs, and a recommendation
+  Channel plan         sequenced week by week, then real depth per
+                       channel:
+                         Search and SEO — intent, the page to rank,
+                           what to build
+                         Google Ads — structure, budget, what to turn
+                           off to fund it
+                         LinkedIn — audience, size check, creative
+                           concept, three-touch sequence
+                         Email — where it sits in the journeys, a
+                           send-by-send flow, segmentation
+                         Organic social and sales enablement
+  Copy                 RSAs with character counts, LinkedIn variants
+                       matching the sequence, subject lines, social
+                       posts — written to ship
+  Keywords             one section now, not the whole plan
+  Landing page         slug, H1, sections, CTA, proof, FAQs, internal
+                       links
+  How you'll know      the numbers to watch, what good looks like, a
+                       two-week checkpoint and a stop condition
+  SFMC email           complete HTML block
 
-Before anything is sent anywhere, the browser assembles evidence from
-data already in this app:
+The no-invented-numbers rule still holds, and is now explicitly
+scoped to numbers. Ideas, angles and tactics it generates freely.
 
-  - keywords for that unit matching the focus, with real spend,
-    conversions and CPL, split into converting and not
-  - keywords burning money with no conversions, as negative candidates
-  - channel performance for that unit from the grid
-  - inbound demand from the contact wizard: how many leads asked for
-    this, through which channels, in which categories
-
-That panel renders immediately and costs nothing. It is worth reading
-on its own.
-
-Only then does Generate send the brief plus that evidence to the
-model, which returns:
-
-  1. Where this stands today
-  2. Keywords — already converting vs worth adding, plus negatives
-  3. Campaign structure — Google ad groups and budget, LinkedIn
-     targeting with an audience size check, email placement
-  4. Ad copy and subject lines — RSA headlines and descriptions with
-     character counts, LinkedIn variants, 5 subject lines
-  5. Landing page brief — slug, H1, sections, CTA, proof, FAQ
-  6. A complete SFMC-ready email as an HTML block
-
-Two download buttons: the whole plan as markdown, and the email HTML
-on its own.
-
-
-WHY IT STREAMS
---------------
-A Netlify function has ten seconds to respond and this takes longer.
-The limit applies to the first byte, not the last, so the response is
-piped through as it is written. You watch the plan appear instead of
-watching a spinner.
+Output limit raised from 8,000 to 16,000 tokens to fit all of it.
+Cost per run goes from roughly 6 cents to roughly 12.
 
 
-ON THE OUTPUT
+2. Keyword evidence no longer depends on publishing.
+
+The builder read keywords from the last published dataset. A
+"Replace everything" import clears those, which is why the panel kept
+saying "No keyword data loaded" — and a campaign plan was about to be
+generated against zero performance history without flagging it.
+
+The 182 keywords already in App.jsx are now bundled into the builder
+as a fallback. Published data still wins; this only fills the gap.
+Nothing new is exposed — same data, same public repo, one file over.
+
+Importing a fresh Google Ads keyword report still overrides it, and
+is still worth doing.
+
+
+3. The demand matcher was producing nonsense.
+
+"Removal of surgery equipment" was being split into removal, surgery,
+equipment — and "equipment" appears in nearly every path label you
+have. It matched 254 of 307 leads and presented that as demand
+evidence for surgical removal specifically.
+
+Generic words are now ignored: equipment, medical, device, system,
+unit, hospital, product and so on. The evidence panel also shows
+which words it actually matched on, so a surprising number is
+traceable rather than mysterious.
+
+If a focus contains only generic words the panel says so instead of
+quietly matching everything.
+
+
+WORTH KNOWING
 -------------
-The model is instructed never to invent a number. Figures in the plan
-come from the evidence, and anything it cannot source it is told to
-flag rather than estimate. It is also told to separate what already
-converts from what it is proposing — evidence versus hypothesis.
+More output means more surface for a confident wrong statement. The
+figures are constrained to the brief, but the strategy is the model's
+own thinking and deserves the same read you would give a new agency's
+first deck: good ideas in there, and some that do not survive contact
+with what you know about the business.
 
-That instruction reduces invention. It does not eliminate it. Check
-the numbers in a plan before it goes to Jeff or Gregory, particularly
-any figure that sounds better than you expected.
-
-The LinkedIn section carries a hard-coded warning about the $2,336 on
-274 people at a $1,523 CPM, so every plan has to state a minimum
-viable audience size.
-
-
-COST
-----
-Each Generate is one API call, roughly 6,000 tokens in and up to
-8,000 out. Pennies per run at Sonnet pricing, but it is not free and
-the site has no login — the passphrase is the only thing between the
-URL and your API balance. Every run is logged to the blob store under
-campaign/runs with a timestamp, the name entered and the focus, so a
-runaway is visible.
-
-
-IF THE PLAN LOOKS THIN
------------------------
-It reflects the evidence. A unit with no keyword data gets proposals
-only, and the plan says so. Import a Google Ads search keyword report
-on the grid tab and publish the form fills data, and the same brief
-produces a much sharper answer.
+The LinkedIn audience-size warning is still hard-coded, so every plan
+has to state a minimum viable audience before recommending spend.

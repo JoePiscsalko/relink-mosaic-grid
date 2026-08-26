@@ -49,6 +49,24 @@ const AUDIENCES = [
   "Supply chain and purchasing",
 ];
 
+/* ---------------- keyword fallback ----------------
+   The 182 search keywords already sitting in App.jsx as SEED_KW.
+
+   The builder reads keywords from whatever was last published. A
+   "Replace everything" import clears them, and until someone
+   re-imports a keyword report the evidence panel has nothing to work
+   with — which is how you end up generating a campaign plan against
+   zero performance history without noticing.
+
+   So: published data wins, and this stands in when there is none.
+   Nothing new is exposed by having it here; it is the same data, in
+   the same public repo, one file over.
+-------------------------------------------------- */
+const KW_MATCH = ["Broad", "Exact", "Phrase"];
+const KW_FALLBACK = [["ready","rent hospital equipment",2,1595,36,6375,535],["ready","medical equipment rental",2,1216,29,4775,424],["ready","medical equipment repair companies",2,1188,13,2527,216],["ready","covidien",2,1163,4,3081,282],["ready","medical equipment repair companies near me",2,1099,20,1795,208],["ready","medical rentals",2,1087,37,3643,358],["ready","medical equipment rental companies",2,988,21,3468,307],["ready","medical equipment repair services",2,828,7,1524,138],["ready","medical equipment rental near me",2,734,15,2786,232],["ready","covidien products",1,501,1,1321,145],["ready","medical equipment repair near me",2,358,3,614,71],["ready","medical equipment repair",2,347,6,888,64],["ready","midmark exam table",2,185,0,567,29],["ready","medical equipment near me rental",2,179,3,601,66],["ready","draeger medical",2,176,0,550,31],["ready","stryker stretchers",2,175,2,825,42],["ready","carl zeiss",2,160,0,576,26],["ready","olympus scopes",2,154,1,485,17],["ready","zoll defibrillators",2,151,0,355,23],["ready","karl storz",2,150,0,835,34],["ready","surgical equipment repair",2,141,4,543,35],["ready","medical rentals near me",2,138,2,779,69],["ready","used medical equipment rental near me",2,137,6,297,27],["ready","stryker bed",2,132,0,684,59],["ready","stryker hospital bed",2,121,1,745,60],["ready","carl zeiss microscopy",2,119,0,471,28],["ready","medical equipment rentals in my area",2,114,5,458,33],["ready","stryker gurney",2,109,0,568,21],["ready","ritter by midmark",2,108,0,420,22],["ready","medical equipment rental prices",2,97,5,310,27],["ready","stryker endoscopy",2,78,0,398,7],["ready","philips intellivue",2,75,0,308,11],["ready","olympus endoscopy",2,70,0,259,7],["ready","ge healthcare patient monitors",2,68,1,355,8],["ready","emergency medical equipment rental",2,67,1,148,20],["ready","karl storz endoscope",2,66,0,122,7],["ready","patient monitor repair service",2,58,2,134,15],["ready","philips heart monitor",2,54,1,93,7],["ready","carl zeiss surgical microscopes",2,53,1,140,8],["ready","infusion pump repair service",2,47,0,167,11],["ready","midmark exam chairs",2,45,0,264,12],["ready","philips cardiac monitor",2,43,0,155,15],["ready","short-term medical equipment rental",2,40,0,114,11],["ready","mindray anesthesia machine",2,40,0,81,7],["ready","affordable medical equipment rental",2,37,1,193,17],["ready","philips patient monitors",2,34,0,238,11],["ready","medical device rental near me",2,32,1,295,24],["ready","welch allyn medical equipment",2,28,0,175,11],["ready","zoll aed",2,25,1,227,9],["ready","philips ultrasound",2,22,0,193,6],["ready","ritter exam tables",2,18,0,55,5],["ready","zoll aed plus",2,17,0,36,2],["ready","storz endoscope",2,16,0,43,5],["ready","hill rom medical devices",2,16,0,13,2],["ready","used stryker stretcher for sale",2,13,0,29,3],["ready","welch allyn medical devices",2,12,0,121,5],["ready","stryker hospital beds for sale",2,11,0,45,4],["ready","medical equipment rental store near me",2,10,0,58,7],["ready","biomedical equipment repair",2,5,0,21,1],["ready","zoll aed 3",2,5,0,14,1],["ready","diagnostic imaging equipment rental",2,3,0,22,2],["ready","mindray anesthesia monitor",2,3,0,3,1],["ready","ventilator rental service",2,3,0,66,2],["ready","philips intellivue x3",2,2,0,20,1],["ready","drager apollo anesthesia machine",2,0,0,7,0],["ready","fluke multimeters",2,0,0,16,0],["ready","mindray anesthesia",2,0,0,11,0],["ready","medical device maintenance services",2,0,0,3,0],["ready","medical device repair companies",2,0,0,2,0],["ready","ECG monitor rental",2,0,0,5,0],["ready","surgical equipment rental near me",2,0,0,1,0],["ready","rental of medical equipment near me",2,0,0,17,0],["ready","medical equipment servicing companies",2,0,0,1,0],["ready","ge carescape b450",2,0,0,2,0],["ready","ge carescape b650",2,0,0,1,0],["ready","philips hospital monitor",2,0,0,2,0],["ready","philips mx40",2,0,0,12,0],["ready","philips vital signs monitor",2,0,0,10,0],["ready","philips intellivue mx40",2,0,0,8,0],["ready","philips intellivue mp30",2,0,0,1,0],["ready","baxter infusion pump",2,0,0,2,0],["ready","baxter IV systems",2,0,0,7,0],["ready","medrad medical equipment",2,0,0,9,0],["ready","draeger anesthesia",2,0,0,7,0],["ready","fluke biomedical products",2,0,0,3,0],["ready","ritter medical exam table",2,0,0,4,0],["disp","Buy Medical Devices",2,2669,44,7695,387],["disp","medical equipment disposition",0,863,7,2550,317],["disp","Used Medical Instruments",2,663,24,1744,215],["disp","ophthalmic instruments",2,515,4,3796,165],["disp","Reconditioned Medical Equipment",2,432,11,1691,176],["disp","Preowned Medical Equipment",2,342,7,1131,153],["disp","Refurbished Medical Instruments",2,323,0,775,75],["disp","Refurbished Medical Equipment",2,267,11,740,90],["disp","medical monitoring devices",2,263,2,1525,51],["disp","Used Medical Devices",2,228,1,717,93],["disp","exam tables",2,188,1,941,64],["disp","used ophthalmic equipment",2,167,0,357,57],["disp","ophthalmology equipment",2,158,0,960,53],["disp","Medical Equipment Liquidation",2,139,4,499,74],["disp","medical exam tables",2,132,1,551,45],["disp","Refurbished Medical Devices",2,118,5,339,29],["disp","ultrasound equipment",2,111,0,449,19],["disp","medical beds for sale",2,108,0,606,53],["disp","ultrasound for sale",2,94,0,705,34],["disp","vital sign monitor",2,93,1,327,15],["disp","used medical equipment near me",2,82,5,418,59],["disp","electrosurgical generator",2,81,0,840,26],["disp","Second Hand Medical Equipment",2,73,0,208,27],["disp","blood pressure machine for home",2,73,0,225,17],["disp","used hospital beds for sale",2,65,0,385,48],["disp","used hospital beds",2,57,0,241,35],["disp","used medical exam tables",2,56,0,118,17],["disp","ophthalmic equipment for sale",2,54,0,382,18],["disp","used endoscopy equipment",2,50,0,70,16],["disp","electrosurgical devices",2,48,0,252,12],["disp","medical table",2,47,0,218,8],["disp","used exam tables",2,41,0,199,22],["disp","Second Hand Medical Instruments",2,40,0,205,22],["disp","hospital beds",2,38,0,379,17],["disp","blood pressure monitors",2,35,0,203,9],["disp","patient monitoring devices",2,34,0,63,3],["disp","we buy medical equipment",2,33,9,253,30],["disp","exam chairs",2,33,0,252,12],["disp","Affordable Medical Equipment",2,29,1,217,25],["disp","home bp monitor",2,27,0,55,4],["disp","used ultrasound machine for sale",2,27,1,76,9],["disp","used anesthesia machines",2,26,0,51,10],["disp","centurion service",2,23,0,105,5],["disp","anesthesia machine",2,23,0,78,5],["disp","hospital beds for sale",2,21,0,132,10],["disp","endoscopy equipment",2,21,0,234,5],["disp","refurbished ultrasound machine",2,19,0,28,5],["disp","anesthesia machine for sale",2,18,0,176,4],["disp","used ultrasound machine",2,17,0,67,8],["disp","patient monitor",2,15,0,69,3],["disp","used hospital beds for sale near me",2,14,0,87,14],["disp","ultrasound machine",2,13,0,40,5],["disp","electrosurgical unit",2,13,0,181,4],["disp","ophthalmic equipment",2,8,0,73,3],["disp","medical bed",2,8,0,100,3],["disp","rigid endoscope",2,5,0,80,2],["disp","smoke evacuation",2,5,0,42,1],["disp","hospital strecher",2,4,0,47,3],["disp","hospital beds for sale near me",2,4,0,54,4],["disp","Second Hand Medical Devices",2,3,0,19,3],["disp","operating table",2,2,0,50,2],["disp","portable blood pressure monitor",2,1,0,2,1],["disp","refurbished anesthesia machines",2,1,0,10,1],["disp","buy ultrasound machine",2,1,0,2,1],["disp","phacoemulsifier",2,0,0,2,0],["disp","portable ultrasound machine for sale",2,0,0,1,0],["disp","at home ultrasound machine",2,0,0,1,0],["disp","ultrasound machine for sale",2,0,0,21,0],["disp","portable ultrasound machine",2,0,0,1,0],["disp","bulk medical supplies",2,0,0,3,0],["disp","exam bed",2,0,0,2,0],["disp","patient bed",2,0,0,17,0],["disp","patient monitoring system",2,0,0,3,0],["disp","medical monitor",2,0,0,5,0],["disp","medical endoscopes",2,0,0,1,0],["disp","operating microscope",2,0,0,1,0],["disp","endoscopy camera",2,0,0,2,0],["disp","used microscope",2,0,0,1,0],["disp","stretcher chair",2,0,0,3,0],["disp","chair medical",2,0,0,16,0],["disp","medical chair",2,0,0,1,0],["disp","medical exam chair",2,0,0,10,0],["disp","electro surgical unit",2,0,0,2,0],["disp","Preowned Medical Devices",2,0,0,5,0],["disp","Wholesale Medical Devices",2,0,0,4,0],["disp","trimedx",2,0,0,52,0],["brand","ReLink Medical",2,1346,341,3010,1212],["brand","Relink Online",2,119,40,335,201],["mev","used hospital equipment",2,640,0,3725,411],["mev","medical equipment auction",2,368,32,1304,243],["mev","used medical supplies",2,81,0,891,51],["mev","medical supply auction",2,46,2,159,30],["mev","dental equipment auctions",2,23,0,85,15],["mev","medical device auction",2,16,0,31,10],["mev","used dental equipment",2,8,0,88,5],["mev","hospital equipment auctions",2,3,0,19,2]].map(
+  (r) => ({ s: r[0], ch: "google", week: null, text: r[1], match: KW_MATCH[r[2]], spend: r[3], leads: r[4], reach: r[5], clicks: r[6] })
+);
+
 /* ---------------- passphrase, held for the session ---------------- */
 let writeKey = "";
 try { writeKey = sessionStorage.getItem("mc:key") || ""; } catch (e) { /* private mode */ }
@@ -73,10 +91,19 @@ const cpl = (spend, leads) => (leads > 0 && spend > 0 ? spend / leads : null);
 /* Everything here is computed locally. Nothing leaves the browser
    until Generate is pressed. */
 function buildEvidence({ grid, forms, sbu, focus, category }) {
+  /* Words that appear in almost every record here carry no signal. Left in,
+     "equipment" alone matched 254 of 307 leads and presented that as demand
+     evidence for one product line. */
+  const STOP = new Set([
+    "with","from","that","this","have","need","want","more","promote","focus","looking","some","just",
+    "equipment","equipments","medical","device","devices","machine","machines","system","systems",
+    "unit","units","product","products","item","items","hospital","hospitals","health","healthcare",
+    "care","gear","stock","supply","supplies","asset","assets",
+  ]);
   const terms = String(focus || "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 3 && !["with","from","that","this","have","need","want","more","promote","focus"].includes(w));
+    .filter((w) => w.length > 3 && !STOP.has(w));
   const cat = String(category || "").toLowerCase();
 
   const hits = (text) => {
@@ -85,7 +112,8 @@ function buildEvidence({ grid, forms, sbu, focus, category }) {
     return terms.some((t) => v.includes(t));
   };
 
-  const kwAll = (grid?.keywords || []).filter((k) => k.s === sbu);
+  const kwSource = (grid?.keywords || []).length ? grid.keywords : KW_FALLBACK;
+  const kwAll = kwSource.filter((k) => k.s === sbu);
   const kwMatched = kwAll.filter((k) => hits(k.text));
   const kwPool = kwMatched.length ? kwMatched : kwAll;
 
@@ -327,7 +355,11 @@ function EvidencePanel({ ev, sbuName }) {
     <div className="cb-ev">
       <div className="cb-ev-head">
         <h3 className="cb-h3">What the data already says</h3>
-        <span className="cb-ev-note">Computed here, from your own numbers. Nothing sent anywhere.</span>
+        <span className="cb-ev-note">
+          {ev.terms.length
+            ? <>matching on <b>{ev.terms.join(", ")}</b></>
+            : "no distinctive words yet — type a focus"}
+        </span>
       </div>
 
       {!ev.matchedByTerm && ev.keywordsSearched > 0 && (
@@ -619,9 +651,10 @@ export default function CampaignBuilder() {
 
             {!out && !busy && !loading && (
               <div className="cb-empty">
-                <p>Fill in the brief and the plan appears here: keywords split into what already converts
-                  and what is worth testing, campaign structure, ad copy, subject lines, a landing page
-                  brief, and an SFMC-ready email.</p>
+                <p>Fill in the brief and the campaign appears here: the idea and the angle, who it is
+                  aimed at and the objections to beat, the offer, a sequenced plan across search, Google,
+                  LinkedIn, email and sales enablement, copy for each, keywords, a landing page, how you
+                  will know it worked, and an SFMC-ready email.</p>
                 <p className="cb-empty-sub">
                   It writes from the evidence above. If that panel looks thin, the plan will say so rather
                   than papering over it.
@@ -676,7 +709,8 @@ const CB_CSS = `
 .cb-ev{padding:20px 22px;border:1px solid var(--line);border-radius:14px;background:#fff}
 .cb-ev-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .cb-ev-head .cb-h3{margin-bottom:0}
-.cb-ev-note{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.05em;color:rgba(46,38,34,.35)}
+.cb-ev-note{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.05em;color:rgba(46,38,34,.35);max-width:38ch;text-align:right}
+.cb-ev-note b{font-weight:500;color:rgba(46,38,34,.55)}
 .cb-flag{margin:14px 0 0;padding:11px 14px;border-radius:9px;background:rgba(5,152,166,.08);border:1px solid rgba(5,152,166,.3);font-size:12.5px;line-height:1.55;color:rgba(46,38,34,.7)}
 .cb-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:16px}
 .cb-stats div{padding:13px 14px;border:1px solid var(--line);border-radius:11px;display:flex;flex-direction:column}
