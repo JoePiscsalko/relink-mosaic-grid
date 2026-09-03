@@ -722,7 +722,11 @@ export default function CampaignBuilder() {
       err.status = 0;
       throw err;
     }
-    return { text, cut: raw.includes("<!--MORE-->") };
+    return {
+      text,
+      cut: raw.includes("<!--MORE-->"),
+      blank: text.includes("This pass produced no text"),
+    };
   };
 
   const generate = async (retry = true) => {
@@ -739,16 +743,24 @@ export default function CampaignBuilder() {
       for (let n = 1; n <= STAGE_LABELS.length; n++) {
         setStage(n);
         if (n > 1) { setOut((p) => p + "\n\n"); assembled += "\n\n"; }
-        let text, cut;
+        let text, cut, blank;
         try {
-          ({ text, cut } = await runStage(n, assembled, key, ctrl));
+          ({ text, cut, blank } = await runStage(n, assembled, key, ctrl));
         } catch (e) {
           /* An empty response almost always means the request died rather than
              the model declining. Worth one retry before giving up on the run. */
           if (e.status !== 0 || e.name === "AbortError") throw e;
-          ({ text, cut } = await runStage(n, assembled, key, ctrl));
+          ({ text, cut, blank } = await runStage(n, assembled, key, ctrl));
         }
         assembled += text;
+
+        /* The pass came back with an explanation instead of content. Stop here
+           rather than building five more sections on top of a hole. */
+        if (blank) {
+          const err = new Error(`Stage ${n} (${STAGE_LABELS[n - 1]}) produced no text — the reason is in the panel.`);
+          err.status = 0;
+          throw err;
+        }
 
         /* A section that ran out of room gets asked for the rest. Budgets are
            small on purpose so no single request can hit the server's 60 second

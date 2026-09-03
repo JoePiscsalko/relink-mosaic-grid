@@ -287,6 +287,12 @@ export default async (req) => {
   const encoder = new TextEncoder();
   let buffer = "";
 
+  /* When a pass comes back with nothing, the browser can only say "empty",
+     which is true and useless. Count what actually arrived from the API and,
+     if no text ever came, say so in the response itself. A run that fails
+     should explain itself rather than needing a log dive. */
+  let frames = 0, deltas = 0, textChars = 0, sawStop = "", firstFrame = "";
+
   const out = new ReadableStream({
     async start(controller) {
       /* Send something immediately, and keep sending while we wait.
@@ -317,10 +323,14 @@ export default async (req) => {
             if (!line.startsWith("data:")) continue;
             const raw = line.slice(5).trim();
             if (!raw || raw === "[DONE]") continue;
+            frames++;
+            if (!firstFrame) firstFrame = raw.slice(0, 160);
             try {
               const ev = JSON.parse(raw);
+              if (ev.type === "message_delta" && ev.delta?.stop_reason) sawStop = ev.delta.stop_reason;
               if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
                 if (alive) { alive = false; clearInterval(beat); }
+                deltas++; textChars += ev.delta.text.length;
                 controller.enqueue(encoder.encode(ev.delta.text));
               }
               /* Hit the ceiling mid-section. Flag it for the browser, which
@@ -336,6 +346,12 @@ export default async (req) => {
         }
       } catch (e) {
         try { controller.enqueue(encoder.encode("\n\n> The connection dropped before the plan finished.\n")); } catch (e2) { /* closed */ }
+      }
+      if (textChars === 0) {
+        const why = frames === 0
+          ? "The API accepted the request but sent nothing back before the connection ended. That usually means the function was cut off at its time limit."
+          : `The API sent ${frames} event${frames === 1 ? "" : "s"} but no text.${sawStop ? ` It stopped with reason: ${sawStop}.` : ""}${firstFrame ? ` First event: ${firstFrame}` : ""}`;
+        try { controller.enqueue(encoder.encode(`\n> **This pass produced no text.** ${why}\n`)); } catch (e) { /* closed */ }
       }
       alive = false;
       clearInterval(beat);

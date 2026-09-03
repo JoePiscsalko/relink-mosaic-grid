@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — small passes, so nothing times out
-======================================================
+CAMPAIGN BUILDER — make it say what went wrong
+===============================================
 
 Two files:
 
@@ -7,58 +7,52 @@ Two files:
     netlify/functions/campaign.js
 
 Add file -> Upload files, drag in BOTH folders, commit.
-Includes everything from the last two updates.
 
 
-WHY STAGE 1 CAME BACK EMPTY
-----------------------------
-The 60 second kill again, in a form I did not anticipate.
+WHY THIS BUILD EXISTS
+---------------------
+I have guessed wrong about this four times running, and each guess has
+cost you an upload and a wait. "Stage 1 came back empty" tells us
+nothing about why, so I have been theorising instead of knowing.
 
-The market read is a five-part ask, so it generates close to its full
-2,800 token allowance. At normal speed that is around 55 seconds — on
-the wall. The function was killed mid-stream, the browser had received
-nothing but keep-alive bytes, and the empty-stage guard correctly
-reported an empty section.
+This build stops the guessing. When a pass produces no text, the
+function now reports what it actually saw, in the panel, in plain
+words. Two possible answers:
 
-The old stage 1 took 32 seconds because its ask was shorter and it
-never used its full budget. Making the ask richer is exactly what
-pushed it over.
+  "The API accepted the request but sent nothing back before the
+   connection ended. That usually means the function was cut off at
+   its time limit."
 
+     -> the 60 second kill, despite the smaller budgets. The fix is
+        architectural: a background function that polls, rather than
+        a request that has to finish inside a minute.
 
-THE FIX
--------
-Every pass is now capped at 1,500 tokens rather than 2,000 to 3,600.
+  "The API sent N events but no text. It stopped with reason: X.
+   First event: {...}"
 
-That works because a section can already ask for the rest of itself.
-A small budget costs an extra round trip; a large one costs the whole
-plan. So the budget is now sized for the slow case:
+     -> the request reached the model and something else went wrong.
+        The stop reason and first event name it exactly.
 
-    at 60 tokens/sec   25s per pass, 35s spare
-    at 50 tokens/sec   30s per pass, 30s spare
-    at 35 tokens/sec   43s per pass, 17s spare
+Either way the next run answers the question instead of raising it.
 
-Continuations raised from 2 to 4 per section, since shorter passes
-mean more of them are normal rather than a symptom.
-
-An empty pass now retries once automatically before failing the run.
-That case is almost always a request that died rather than the model
-declining, and it is worth one more try before losing everything.
+The run also halts at that point rather than building five more
+sections on top of a hole, and the explanation stays on screen.
 
 
-WHAT TO EXPECT
---------------
-Three to four minutes, longer than before. More round trips, each one
-small enough that none of them can fall off the wall. The stage
-counter moves through the seven passes and text keeps flowing; you
-will not see the continuations happen.
+WHAT TO DO
+----------
+Upload, wait for green, hit Generate once, and send me the message in
+the panel. That one line decides the fix, and I would rather read it
+than guess a fifth time.
 
-Wait for the counter beside THE PLAN to disappear before downloading
-the pack — that is how you know all seven passes are finished.
+If it is the time limit, the honest answer is that this feature needs
+a background function with polling rather than more budget tuning.
+That is a bigger change than anything so far, and I should have
+proposed it three attempts ago instead of shaving token counts.
 
 
-THE TRADE I MADE
-----------------
-Slower and more reliable, over faster and occasionally losing the
-whole run. Four failed attempts on this feature have all been the same
-root cause in different clothes: I kept sizing for the good case. This
-one is sized for the bad case.
+ALSO IN THIS BUILD
+------------------
+Everything from the last three updates: the market read pass, the
+rewritten rules that invite market knowledge, small 1,500 token passes,
+sections that continue themselves, and the empty-pass retry.
