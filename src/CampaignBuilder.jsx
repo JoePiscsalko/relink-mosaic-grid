@@ -169,11 +169,13 @@ function evidenceToText(ev, form, sbuName) {
   if (form.channels.length) L.push(`Channels wanted: ${form.channels.join(", ")}`);
   if (form.notes) L.push(`Extra context from the SBU leader: ${form.notes}`);
   L.push(``);
-  L.push(`# Performance evidence`);
+  L.push(`# Reference data`);
+  L.push(``);
+  L.push(`What follows is what reLink has already run. Treat it as a check on your thinking, not as the boundary of it — it covers a fraction of the market and says nothing about what has not been tried.`);
   L.push(``);
   L.push(ev.matchedByTerm
     ? `The keyword figures below matched the focus terms directly.`
-    : `Nothing in the keyword data matched the focus terms, so these are the whole unit's keywords for context. Say so in your answer — it means this is a new area rather than an existing one.`);
+    : `No existing keyword matched the focus terms, so the table below is the unit's wider history, included for context only. This means the campaign is opening new ground rather than optimising old ground. Do not narrate that gap in your answer — just build the plan.`);
   L.push(``);
 
   if (ev.converting.length) {
@@ -228,7 +230,7 @@ function evidenceToText(ev, form, sbuName) {
   if (ev.focusCats.length) L.push(`- Categories asked for: ${ev.focusCats.map(([k, v]) => `${k} ${v}`).join(", ")}`);
   if (ev.focusPaths.length) L.push(`- Request types: ${ev.focusPaths.map(([k, v]) => `${k} ${v}`).join(", ")}`);
   L.push(``);
-  L.push(`Write the plan. Use these figures exactly; do not round them into different numbers and do not add figures that are not here.`);
+  L.push(`These are the only figures you may attribute to reLink. Use them exactly. Everything else in the plan — how this category is bought, what it typically costs, who else competes, what to try — is your own judgement, and you should bring plenty of it. Thin data here is not a reason to write less.`);
   return L.join("\n");
 }
 
@@ -678,7 +680,7 @@ export default function CampaignBuilder() {
   /* Five passes, not one. A Netlify function is killed at 60 seconds and a
      whole campaign takes minutes to write, so it is written in sections and
      stitched together here. Each pass is handed everything written so far. */
-  const STAGE_LABELS = ["the idea", "the offer and channel plan", "the copy", "keywords and landing page", "the emails"];
+  const STAGE_LABELS = ["the market read", "the idea", "the offer and channel plan", "the copy", "the keywords", "the landing page", "the emails"];
 
   const runStage = async (n, prior, key, ctrl) => {
     const res = await fetch(API, {
@@ -705,8 +707,18 @@ export default function CampaignBuilder() {
       const chunk = dec.decode(value, { stream: true }).replace(/\u200b/g, "");
       if (!chunk) continue;          /* keep-alive only, nothing to show yet */
       text += chunk;
+      /* Follow the text only if they are already at the bottom. Yanking
+         someone back down while they are reading section two is worse than
+         making them scroll. */
+      const el = outRef.current;
+      const pinned = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       setOut((p) => p + chunk);
-      if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;
+      if (el && pinned) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    }
+    if (!text.trim()) {
+      const err = new Error(`Stage ${n} came back empty. Anything written before it is still below.`);
+      err.status = 0;
+      throw err;
     }
     return text;
   };
@@ -722,7 +734,7 @@ export default function CampaignBuilder() {
 
     let assembled = "";
     try {
-      for (let n = 1; n <= 5; n++) {
+      for (let n = 1; n <= STAGE_LABELS.length; n++) {
         setStage(n);
         if (n > 1) { setOut((p) => p + "\n\n"); assembled += "\n\n"; }
         const text = await runStage(n, assembled, key, ctrl);
@@ -861,7 +873,7 @@ export default function CampaignBuilder() {
             </div>
             <p className="cb-fine">
               {loading ? "Loading your grid and lead data\u2026"
-                : busy ? "Written in five passes so each one lands inside the server's time limit. Takes a couple of minutes."
+                : busy ? "Written in six passes so each one lands inside the server's time limit. Takes a couple of minutes."
                 : "The brief and the evidence below are what get sent. Nothing else leaves the browser."}
             </p>
           </div>
@@ -875,7 +887,7 @@ export default function CampaignBuilder() {
                   <h3 className="cb-h3">
                     The plan
                     {busy && <i className="cb-dot" />}
-                    {busy && stage > 0 && <em className="cb-stage">{stage} of 5 &middot; {STAGE_LABELS[stage - 1]}</em>}
+                    {busy && stage > 0 && <em className="cb-stage">{stage} of {STAGE_LABELS.length} &middot; {STAGE_LABELS[stage - 1]}</em>}
                   </h3>
                   <div className="cb-plan-btns">
                     {out && !busy && (
@@ -889,7 +901,7 @@ export default function CampaignBuilder() {
                     )}
                   </div>
                 </div>
-                <div className="cb-plan-body" ref={outRef}>
+                <div className="cb-plan-body" ref={outRef} tabIndex={0} aria-label="The plan, scrollable">
                   <Markdown text={out} />
                   {busy && <span className="cb-caret" />}
                 </div>
@@ -979,7 +991,8 @@ const CB_CSS = `
 .cb-mini:hover{border-color:#2E2622;color:#2E2622}
 .cb-mini.is-primary{background:#F38637;border-color:#F38637;color:#fff}
 .cb-mini.is-primary:hover{background:#e0752a;border-color:#e0752a;color:#fff}
-.cb-plan-body{max-height:78vh;overflow-y:auto;padding-top:4px}
+.cb-plan-body{max-height:78vh;overflow-y:auto;padding-top:4px;scrollbar-gutter:stable}
+.cb-plan-body:focus-visible{outline:2px solid #0598A6;outline-offset:2px}
 .cb-caret{display:inline-block;width:8px;height:15px;background:#F38637;vertical-align:text-bottom;animation:cbpulse .9s ease-in-out infinite}
 
 .cb-plan-body .cb-h3{margin:26px 0 10px;font-size:11.5px;color:#0598A6}

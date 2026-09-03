@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — keep-alive fix
-==================================
+CAMPAIGN BUILDER — think first, check the data second
+======================================================
 
 Two files:
 
@@ -9,46 +9,103 @@ Two files:
 Add file -> Upload files, drag in BOTH folders, commit.
 
 
-WHAT THE LOG SHOWED
+THE PROBLEM
+-----------
+It was not that the model would not think. It was that everything
+about how it was asked told it not to.
+
+Three things were doing that:
+
+1. The brief was mostly evidence tables and closed with "use these
+   figures exactly; do not add figures that are not here." That reads
+   as an instruction to do analysis, not strategy.
+
+2. The first and hardest rule was "never invent a number." Applied
+   broadly it produced a defensive voice — hence "Nothing in the
+   evidence touches infusion pumps. This is genuinely new ground."
+   That was obedience, and it read as refusal.
+
+3. Nothing ever asked for market knowledge. Not how this equipment
+   gets bought, not who else competes, not when budgets appear. Never
+   requested, so never offered.
+
+
+WHAT CHANGED
+------------
+
+A new first pass: THE MARKET READ
+
+Before it touches reLink's data at all, it now writes what it knows
+about the category:
+
+  - How this actually gets bought: who raises it, who specifies, who
+    signs, how long approval takes, and whether the money is capital,
+    operating, or a disposal that funds itself
+  - What triggers it: service line closures, fleet standardisation,
+    OR refits, mergers, OEM end-of-life notices, fiscal year end —
+    and when in the year they cluster
+  - Where these buyers already are: the searches, the marketplaces
+    and auction sites, the forums, the named competitors who show up,
+    and the gap reLink can stand in
+  - What usually works in this category and what reliably does not
+  - Likely economics, marked as market judgement, with what to verify
+    in Keyword Planner first
+
+Everything after it builds on that. The idea pass is told outright:
+if the idea would work equally well for any company selling any
+equipment, it is not the idea.
+
+Rules rewritten
+
+  Before: never invent a number, full stop
+  Now:    figures attributed to reLink must come from the brief;
+          market norms, competitor behaviour, category benchmarks and
+          cost expectations are open, and should be brought freely,
+          marked as market judgement so a reader can tell them apart
+
+Plus an explicit ban on the thing that was annoying you: never open a
+section by describing what the evidence lacks. If there is no
+precedent, make the call, label it a hypothesis, give the two-week
+test that would kill it.
+
+The brief reframed
+
+The evidence section is now titled "Reference data" and introduced as
+a check on thinking rather than the boundary of it. The closing line
+changed from forbidding new figures to inviting judgement.
+
+
+SEVEN PASSES NOW
+----------------
+    1. the market read              2,800
+    2. the idea, and who            2,800
+    3. the offer and channel plan   2,800
+    4. the copy                     2,800
+    5. the keywords                 3,200
+    6. landing page and measurement 2,600
+    7. the emails                   3,800
+
+20,800 tokens, roughly 21 cents a plan. Around two and a half minutes.
+
+
+WHAT TO JUDGE IT ON
 -------------------
-    09:47:08  Duration: 32434.69 ms
+Run the same infusion pump brief and read the market read first. If it
+names real competitors, real buying triggers and real timing, the
+change worked. If it is generic B2B filler that would fit any product,
+tell me and the fix is more specificity in that pass, not more data.
 
-Stage 1 ran for 32 seconds and finished cleanly. No crash, no timeout,
-well inside the 60 second ceiling. The function did its job — the
-browser just never received it.
-
-That is a different failure from the last two. The proxy sitting in
-front of the function closes the connection to the browser if no bytes
-arrive soon enough, and this stream sent nothing at all until the model
-produced its first token. The model spends the first several seconds
-reading the brief before it writes anything, so the connection was
-being cut while the function carried on working into the void.
-
-Hence "Stage 1 didn't come back" while the log said it plainly had.
+Worth knowing: this is now the model's knowledge of the medical
+equipment market, which is broad but not current and not reLink's.
+Treat the market read as a well-read outsider's opinion — useful,
+occasionally wrong, and worth your correction where it is.
 
 
-THE FIX
--------
-The function now sends a byte the instant the stream opens, and keeps
-sending one every three seconds until real text starts flowing. It is
-a zero-width space — invisible in the rendered plan, and the browser
-strips it anyway. It exists only to keep the pipe warm.
-
-Measured against an upstream deliberately stalled for 7 seconds:
-
-    first byte before the fix   ~7,000 ms
-    first byte after the fix        49 ms
-    text delivered intact           yes
-
-Stage errors now also report the HTTP status, so if anything else goes
-wrong the message says what happened rather than shrugging.
-
-
-WHAT TO EXPECT
---------------
-Generate, and within a second the heading should show
-"1 of 5 - the idea" with the pulsing dot. Text begins appearing a few
-seconds later. Five passes, roughly two minutes end to end.
-
-If a pass still fails, whatever was written stays on screen and the
-error names the stage and the status code.
+NEXT STEP IF YOU WANT IT
+------------------------
+The API supports giving the model live web search, so the market read
+could cite current competitor pricing and real listings rather than
+working from memory. That is a genuine step up and it is a contained
+change — one stage, one tool definition. It costs more per run and
+adds time, so it is worth deciding deliberately rather than by
+default. Say the word.

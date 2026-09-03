@@ -53,19 +53,38 @@ const json = (body, status = 200) =>
 
 const STAGES = {
   1: {
-    label: "the idea",
-    tokens: 2600,
-    ask: `Write ONLY these two sections.
+    label: "the market read",
+    tokens: 2800,
+    ask: `Write ONLY this section. This one is your own knowledge of the market rather than reLink's data. Be concrete and be specific to this equipment — a generic B2B answer is worse than nothing here.
 
-## The idea
-The campaign in one sentence, then the thinking behind it. What is the angle? Why does this land now? What is the single message everything else hangs off? Give it a working name. Be specific to reLink and to this equipment — not a template with the product swapped in.
+## The market read
 
-## Who you're actually talking to
-The buying situation, not a persona sheet. What is happening in their week that makes this relevant. Who signs off versus who searches. The two or three objections that kill these deals and how the campaign pre-empts each. If the brief's lead data says something about where these people come from, use it.
+**How this actually gets bought.** Who raises it, who specifies it, who signs. What the approval path looks like inside a health system and roughly how long it takes. Where the money comes from — capital budget, operating budget, or a disposal that funds itself — because that changes the entire pitch.
 
-Stop after those two sections. Do not write any other heading.`,
+**What triggers it.** The events that create demand for this specific thing: a service line closing, fleet standardisation, an OR refit, a merger, an OEM end-of-life notice, a fiscal year ending with budget to burn. Name the ones that matter here and say roughly when in the year they cluster.
+
+**Where these buyers already are.** The searches they run, where they look before they search, the marketplaces and auction sites in this category, the forums and associations. Name the real competitors who show up when they look, say what each is good at, and say where the gap is that reLink can stand in.
+
+**What usually works, and what reliably does not.** For this category specifically. Be blunt about the second part.
+
+**Likely economics.** Rough expectations for search volume, competition and cost in this category, clearly marked as market judgement rather than reLink figures, plus what you would verify in Keyword Planner before anyone commits budget.
+
+Stop after this section.`,
   },
   2: {
+    label: "the idea",
+    tokens: 2800,
+    ask: `Write ONLY these two sections, building directly on the market read above. The trigger and competitor gap you identified there should be visible in the idea — if the idea would work equally well for any company selling any equipment, it is not the idea.
+
+## The idea
+The campaign in one sentence, then the thinking behind it. What is the angle? Why does it land now, given the timing you described? What is the single message everything hangs off? Give it a working name.
+
+## Who you're actually talking to
+The buying situation, not a persona sheet. What is happening in their week that makes this relevant. Who searches, who specifies, who signs, and what each of them needs to hear. The two or three objections that kill these deals and how the campaign pre-empts each. Where lead data in the brief tells you something about where these people come from, use it; where it does not, use what you know about the category.
+
+Stop after those two sections.`,
+  },
+  3: {
     label: "the offer and channel plan",
     tokens: 2800,
     ask: `Write ONLY these two sections, continuing the campaign already begun above.
@@ -90,7 +109,7 @@ Then per channel, with real depth:
 
 Stop after those two sections.`,
   },
-  3: {
+  4: {
     label: "the copy",
     tokens: 2800,
     ask: `Write ONLY this section, using the campaign idea and the three-touch LinkedIn sequence already established above.
@@ -106,13 +125,35 @@ Organic social: 2 complete captions for the LinkedIn company page.
 
 Stop after this section.`,
   },
-  4: {
-    label: "keywords and the landing page",
-    tokens: 2800,
-    ask: `Write ONLY these three sections.
+  5: {
+    label: "the keywords",
+    tokens: 3200,
+    ask: `Write ONLY this section.
 
 ## Keywords
-Two tables. "Already converting" — only keywords present in the evidence with conversions: Keyword | Spend | Conv | CPL | Action. "Worth adding" — your proposals: Keyword | Match type | Why | Intent. Then a short negatives list if the evidence shows spend with no conversions. If there is no keyword evidence, say so plainly and give proposals only, noting they need volume checking in Keyword Planner before budget goes near them.
+
+**Already converting** — a table of keywords that appear in the evidence with conversions: Keyword | Spend | Conv | CPL | Action. If the evidence contains none that relate to this focus, write one short line saying so and move straight on. Do not pad it.
+
+**Worth adding** — this is the part that matters and you must always write it, at length, whether or not there was any evidence above. Propose 12 to 18 keywords from your own understanding of how this equipment gets bought and how these buyers search. Group them under intent headings:
+
+- *Ready to transact* — someone looking to buy or sell this specific thing now
+- *Comparing options* — evaluating, pricing, checking condition or specification
+- *Problem-led* — searching the situation rather than the product, before they know reLink exists
+
+Table per group: Keyword | Match type | Why this buyer types it | Ad group.
+
+Cover the ground deliberately: manufacturer and model terms people actually use, the words a biomed says versus the words a purchasing manager says, refurbished and used variants, the removal or disposal framing as well as the buying framing, and long-tail phrasing that signals a real situation rather than research.
+
+Then **Add as negatives** — from the evidence where terms are spending with no conversions, and from your own reading of which of your proposals will attract the wrong intent.
+
+Close with one short paragraph: these proposals are hypotheses, they need volume and competition checking in Google Keyword Planner before budget goes near them, and name the three you would test first and why.
+
+Stop after this section.`,
+  },
+  6: {
+    label: "the landing page",
+    tokens: 2600,
+    ask: `Write ONLY these two sections.
 
 ## Landing page
 Target URL slug under relinkmedical.com, H1, section-by-section outline with the point each section makes, primary CTA, proof points, 3 FAQs, and which existing reLink pages should link to it.
@@ -120,9 +161,9 @@ Target URL slug under relinkmedical.com, H1, section-by-section outline with the
 ## How you'll know it worked
 Three or four numbers to watch, what good looks like for each given what the brief shows about current performance, and the point at which you would stop and rethink. Include a two-week checkpoint.
 
-Stop after those three sections.`,
+Stop after those two sections.`,
   },
-  5: {
+  7: {
     label: "the emails",
     tokens: 3800,
     ask: `Write ONLY this section. Use the subject lines and the email flow already established above.
@@ -143,19 +184,23 @@ Keep each email's HTML tight. Stop after the second email.`,
 
 const SYSTEM = `You are a senior B2B campaign strategist writing for reLink Medical, a veteran-owned medical equipment disposition company in Twinsburg, Ohio. reLink helps hospitals and health systems remove, redeploy and resell surplus equipment, and sells refurbished equipment onward to buyers. This is B2B — never patient-facing.
 
-You are writing the campaign an SBU leader will run. Think like a strategist first and an analyst second. The performance data in the brief keeps you honest about what has worked; it is not the campaign. A plan that only reshuffles existing keywords is a failure of imagination. Bring an idea.
+An SBU leader has told you what they want to promote. You are writing the campaign they will run. Most of what makes it good comes from your own knowledge: how this category of equipment actually gets bought, who is in the room, what triggers a purchase, who else competes for the same attention, when in the year the money appears, what works in this market and what reliably fails. Bring all of it. The performance data you are given is a useful check on what reLink has already tried. It is not the campaign, and it is usually incomplete.
 
-The plan is written in passes. You will be given the brief, everything written so far, and the sections to write now. Write only what is asked for, continue the campaign already established rather than restarting it, and never repeat a section that already exists.
+HOW TO HANDLE NUMBERS
 
-Rules you do not break:
+Figures you present as reLink's own performance — their spend, conversions, cost per lead, lead counts, open rates — must come from the brief. Never invent one, never round one into a different number.
 
-1. Never invent a performance number. Spend, conversions, cost per lead, lead counts, open rates — if the brief supplies them use them exactly; if it does not, say what you would want to look up. This applies to figures only. Ideas, angles, audience insight, creative concepts and channel tactics are yours to generate freely and you should be bold with them.
+Everything else is open. Market norms, typical benchmarks for this category, competitor behaviour, how a buying cycle usually runs, roughly what a keyword costs — bring these freely and mark them as market judgement rather than reLink data, so a reader can tell the two apart at a glance. A campaign built only from what reLink has already done can never propose anything reLink has not already done.
 
-2. Separate evidence from proposal. Anything with history in the brief is evidence. Everything you invent is a hypothesis — label it, and say how you would know within two weeks whether it is working.
+HOW TO HANDLE THIN DATA
 
-3. No clinical or regulatory claims about equipment condition, safety or certification beyond what the brief states.
+Never open a section by describing what the evidence lacks. "There is no history for this" is a preamble, not an insight. If there is no precedent, make the call anyway, say plainly that it is a hypothesis, and give the two-week test that would prove or kill it. An SBU leader wants a recommendation they can act on, not a description of the gaps in their own reporting.
 
-4. Write plainly. No "unlock", "leverage", "elevate", "game-changing", "in today's fast-paced". Short sentences. Say the thing.
+The plan is written in passes. You get the brief, everything written so far, and the sections to write now. Write only what is asked for, continue the campaign already established rather than restarting it, never repeat a section that exists.
+
+No clinical or regulatory claims about equipment condition, safety or certification beyond what the brief states.
+
+Write plainly. No "unlock", "leverage", "elevate", "game-changing", "in today's fast-paced". Short sentences. Say the thing.
 
 Brand: Action Orange #F38637, Tech Teal #0598A6, Olive Green #90AD51, Espresso #2E2622, Cream #FAF7F1. Source Sans 3. Pill-shaped buttons. Headlines use weight contrast with a single orange accent word.
 
@@ -264,6 +309,8 @@ export default async (req) => {
                 if (alive) { alive = false; clearInterval(beat); }
                 controller.enqueue(encoder.encode(ev.delta.text));
               }
+              if (ev.type === "message_delta" && ev.delta?.stop_reason === "max_tokens")
+                controller.enqueue(encoder.encode("\n\n> This section ran out of room and stopped early. Generate again, or shorten the brief.\n"));
               if (ev.type === "error")
                 controller.enqueue(encoder.encode(`\n\n> The API stopped early: ${ev.error?.message || "unknown error"}\n`));
             } catch (e) { /* partial frame, wait for the rest */ }
