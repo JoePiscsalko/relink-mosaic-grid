@@ -739,13 +739,22 @@ export default function CampaignBuilder() {
       for (let n = 1; n <= STAGE_LABELS.length; n++) {
         setStage(n);
         if (n > 1) { setOut((p) => p + "\n\n"); assembled += "\n\n"; }
-        let { text, cut } = await runStage(n, assembled, key, ctrl);
+        let text, cut;
+        try {
+          ({ text, cut } = await runStage(n, assembled, key, ctrl));
+        } catch (e) {
+          /* An empty response almost always means the request died rather than
+             the model declining. Worth one retry before giving up on the run. */
+          if (e.status !== 0 || e.name === "AbortError") throw e;
+          ({ text, cut } = await runStage(n, assembled, key, ctrl));
+        }
         assembled += text;
 
-        /* A section that ran out of room gets asked for the rest, twice at
-           most. Better than leaving a table hanging mid-row and better than
-           me guessing a token budget that holds for every brief. */
-        for (let tries = 0; cut && tries < 2; tries++) {
+        /* A section that ran out of room gets asked for the rest. Budgets are
+           small on purpose so no single request can hit the server's 60 second
+           kill, which means several of these per section is normal, not a
+           symptom. */
+        for (let tries = 0; cut && tries < 4; tries++) {
           const more = await runStage(n, assembled, key, ctrl, true);
           assembled += more.text;
           cut = more.cut;
@@ -888,7 +897,7 @@ export default function CampaignBuilder() {
             </div>
             <p className="cb-fine">
               {loading ? "Loading your grid and lead data\u2026"
-                : busy ? "Written in six passes so each one lands inside the server's time limit. Takes a couple of minutes."
+                : busy ? "Written in short passes so none of them can time out. Two to three minutes, and sections continue themselves if they run long."
                 : "The brief and the evidence below are what get sent. Nothing else leaves the browser."}
             </p>
           </div>

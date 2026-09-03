@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — sections finish themselves
-==============================================
+CAMPAIGN BUILDER — small passes, so nothing times out
+======================================================
 
 Two files:
 
@@ -7,60 +7,58 @@ Two files:
     netlify/functions/campaign.js
 
 Add file -> Upload files, drag in BOTH folders, commit.
-This includes the market read update, so if that one did not go in,
-this covers both.
+Includes everything from the last two updates.
 
 
-WHAT YOU SAW
-------------
-"This section ran out of room and stopped early."
+WHY STAGE 1 CAME BACK EMPTY
+----------------------------
+The 60 second kill again, in a form I did not anticipate.
 
-That message was working as designed — before it, a section would just
-stop mid-row and say nothing. But telling you to generate the whole
-plan again over one unfinished table is a poor answer.
+The market read is a five-part ask, so it generates close to its full
+2,800 token allowance. At normal speed that is around 55 seconds — on
+the wall. The function was killed mid-stream, the browser had received
+nothing but keep-alive bytes, and the empty-stage guard correctly
+reported an empty section.
 
-The underlying problem is that I was guessing a token budget per
-section. The keyword section asks for three grouped tables with four
-columns, twelve to fifteen rows, negatives and a closing
-recommendation. How long that runs depends entirely on the brief, so
-no number I pick holds for every case.
+The old stage 1 took 32 seconds because its ask was shorter and it
+never used its full budget. Making the ask richer is exactly what
+pushed it over.
 
 
 THE FIX
 -------
-A section that runs out of room now asks for the rest of itself.
+Every pass is now capped at 1,500 tokens rather than 2,000 to 3,600.
 
-When the model hits the ceiling, the function sends an invisible
-marker. The browser sees it and immediately requests a continuation,
-handing back everything written so far with one instruction: pick up
-exactly where you stopped, mid-sentence if that is where it broke,
-do not repeat, do not restart, do not add a heading.
+That works because a section can already ask for the rest of itself.
+A small budget costs an extra round trip; a large one costs the whole
+plan. So the budget is now sized for the slow case:
 
-Up to two continuations per section. If it somehow still is not done
-after that, you get a visible note rather than a silent stop.
+    at 60 tokens/sec   25s per pass, 35s spare
+    at 50 tokens/sec   30s per pass, 30s spare
+    at 35 tokens/sec   43s per pass, 17s spare
 
-You will not notice it happening. The text simply keeps going.
+Continuations raised from 2 to 4 per section, since shorter passes
+mean more of them are normal rather than a symptom.
 
-The keyword budget also went from 3,200 to 3,600 and the ask from
-12-18 keywords to 12-15, so most runs will not need a continuation at
-all.
-
-
-ALSO WORTH KNOWING
-------------------
-In your screenshot the pack ended at Keywords, with the footer right
-after. If the run was still going when you downloaded, the pack only
-contains what existed at that moment. Wait for the stage counter to
-disappear before downloading — that is how you know all seven passes
-are done.
+An empty pass now retries once automatically before failing the run.
+That case is almost always a request that died rather than the model
+declining, and it is worth one more try before losing everything.
 
 
-VERIFIED
---------
-Ran against a stubbed model that deliberately truncates:
+WHAT TO EXPECT
+--------------
+Three to four minutes, longer than before. More round trips, each one
+small enough that none of them can fall off the wall. The stage
+counter moves through the seven passes and text keeps flowing; you
+will not see the continuations happen.
 
-    truncation marker sent          yes
-    continuation requested          yes
-    continuation asks to resume     yes, not restart
-    no duplicate heading            yes
-    marker stripped from the text   yes
+Wait for the counter beside THE PLAN to disappear before downloading
+the pack — that is how you know all seven passes are finished.
+
+
+THE TRADE I MADE
+----------------
+Slower and more reliable, over faster and occasionally losing the
+whole run. Four failed attempts on this feature have all been the same
+root cause in different clothes: I kept sizing for the good case. This
+one is sized for the bad case.

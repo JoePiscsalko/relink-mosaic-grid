@@ -26,6 +26,14 @@ import { getStore } from "@netlify/blobs";
 ------------------------------------------------------------------- */
 
 const MODEL = "claude-sonnet-5";
+
+/* Token budgets are deliberately small. A function is killed at 60 seconds,
+   and a pass that generates its full allowance at typical speed lands right
+   on that wall — the stream dies with nothing delivered and the whole run
+   stops. Since a section that runs out of room now asks for the rest of
+   itself, a small budget costs an extra round trip; a large one costs the
+   entire plan. 1,500 tokens is roughly 30 seconds at typical speed and still
+   under the wall at half that speed, which is the case worth designing for. */
 const STORE = "mosaic-grid";
 const MAX_BRIEF = 12000;
 const MAX_PRIOR = 30000;
@@ -54,7 +62,7 @@ const json = (body, status = 200) =>
 const STAGES = {
   1: {
     label: "the market read",
-    tokens: 2800,
+    tokens: 1500,
     ask: `Write ONLY this section. This one is your own knowledge of the market rather than reLink's data. Be concrete and be specific to this equipment — a generic B2B answer is worse than nothing here.
 
 ## The market read
@@ -73,7 +81,7 @@ Stop after this section.`,
   },
   2: {
     label: "the idea",
-    tokens: 2800,
+    tokens: 1500,
     ask: `Write ONLY these two sections, building directly on the market read above. The trigger and competitor gap you identified there should be visible in the idea — if the idea would work equally well for any company selling any equipment, it is not the idea.
 
 ## The idea
@@ -86,7 +94,7 @@ Stop after those two sections.`,
   },
   3: {
     label: "the offer and channel plan",
-    tokens: 2800,
+    tokens: 1500,
     ask: `Write ONLY these two sections, continuing the campaign already begun above.
 
 ## The offer
@@ -111,7 +119,7 @@ Stop after those two sections.`,
   },
   4: {
     label: "the copy",
-    tokens: 2800,
+    tokens: 1500,
     ask: `Write ONLY this section, using the campaign idea and the three-touch LinkedIn sequence already established above.
 
 ## Copy
@@ -127,7 +135,7 @@ Stop after this section.`,
   },
   5: {
     label: "the keywords",
-    tokens: 3600,
+    tokens: 1500,
     ask: `Write ONLY this section.
 
 ## Keywords
@@ -152,7 +160,7 @@ Stop after this section.`,
   },
   6: {
     label: "the landing page",
-    tokens: 2600,
+    tokens: 1500,
     ask: `Write ONLY these two sections.
 
 ## Landing page
@@ -165,7 +173,7 @@ Stop after those two sections.`,
   },
   7: {
     label: "the emails",
-    tokens: 3800,
+    tokens: 1500,
     ask: `Write ONLY this section. Use the subject lines and the email flow already established above.
 
 ## The emails
