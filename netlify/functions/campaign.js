@@ -32,8 +32,9 @@ const MODEL = "claude-sonnet-5";
    on that wall — the stream dies with nothing delivered and the whole run
    stops. Since a section that runs out of room now asks for the rest of
    itself, a small budget costs an extra round trip; a large one costs the
-   entire plan. 1,500 tokens is roughly 30 seconds at typical speed and still
-   under the wall at half that speed, which is the case worth designing for. */
+   entire plan. 2,200 tokens is roughly 44 seconds at typical speed. That was too close to the
+   wall while extended thinking was eating the budget; with thinking off the
+   whole allowance goes to output and the pass starts producing immediately. */
 const STORE = "mosaic-grid";
 const MAX_BRIEF = 12000;
 const MAX_PRIOR = 30000;
@@ -62,7 +63,7 @@ const json = (body, status = 200) =>
 const STAGES = {
   1: {
     label: "the market read",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY this section. This one is your own knowledge of the market rather than reLink's data. Be concrete and be specific to this equipment — a generic B2B answer is worse than nothing here.
 
 ## The market read
@@ -81,7 +82,7 @@ Stop after this section.`,
   },
   2: {
     label: "the idea",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY these two sections, building directly on the market read above. The trigger and competitor gap you identified there should be visible in the idea — if the idea would work equally well for any company selling any equipment, it is not the idea.
 
 ## The idea
@@ -94,7 +95,7 @@ Stop after those two sections.`,
   },
   3: {
     label: "the offer and channel plan",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY these two sections, continuing the campaign already begun above.
 
 ## The offer
@@ -119,7 +120,7 @@ Stop after those two sections.`,
   },
   4: {
     label: "the copy",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY this section, using the campaign idea and the three-touch LinkedIn sequence already established above.
 
 ## Copy
@@ -135,7 +136,7 @@ Stop after this section.`,
   },
   5: {
     label: "the keywords",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY this section.
 
 ## Keywords
@@ -160,7 +161,7 @@ Stop after this section.`,
   },
   6: {
     label: "the landing page",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY these two sections.
 
 ## Landing page
@@ -173,7 +174,7 @@ Stop after those two sections.`,
   },
   7: {
     label: "the emails",
-    tokens: 1500,
+    tokens: 2200,
     ask: `Write ONLY this section. Use the subject lines and the email flow already established above.
 
 ## The emails
@@ -264,6 +265,7 @@ export default async (req) => {
         model: MODEL,
         max_tokens: stage.tokens,
         stream: true,
+        thinking: { type: "disabled" },
         system: SYSTEM,
         messages: [{ role: "user", content: userMessage }],
       }),
@@ -291,7 +293,7 @@ export default async (req) => {
      which is true and useless. Count what actually arrived from the API and,
      if no text ever came, say so in the response itself. A run that fails
      should explain itself rather than needing a log dive. */
-  let frames = 0, deltas = 0, textChars = 0, sawStop = "", firstFrame = "";
+  let frames = 0, deltas = 0, textChars = 0, thinkChars = 0, sawStop = "", firstFrame = "";
 
   const out = new ReadableStream({
     async start(controller) {
@@ -328,6 +330,8 @@ export default async (req) => {
             try {
               const ev = JSON.parse(raw);
               if (ev.type === "message_delta" && ev.delta?.stop_reason) sawStop = ev.delta.stop_reason;
+              if (ev.type === "content_block_delta" && ev.delta?.type === "thinking_delta")
+                thinkChars += (ev.delta.thinking || "").length;
               if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
                 if (alive) { alive = false; clearInterval(beat); }
                 deltas++; textChars += ev.delta.text.length;
@@ -350,7 +354,9 @@ export default async (req) => {
       if (textChars === 0) {
         const why = frames === 0
           ? "The API accepted the request but sent nothing back before the connection ended. That usually means the function was cut off at its time limit."
-          : `The API sent ${frames} event${frames === 1 ? "" : "s"} but no text.${sawStop ? ` It stopped with reason: ${sawStop}.` : ""}${firstFrame ? ` First event: ${firstFrame}` : ""}`;
+          : thinkChars > 0
+            ? `The model spent its whole budget thinking (${thinkChars} characters of it) and never reached the writing. Extended thinking should be off — check the thinking parameter in campaign.js.`
+            : `The API sent ${frames} event${frames === 1 ? "" : "s"} but no text.${sawStop ? ` It stopped with reason: ${sawStop}.` : ""}${firstFrame ? ` First event: ${firstFrame}` : ""}`;
         try { controller.enqueue(encoder.encode(`\n> **This pass produced no text.** ${why}\n`)); } catch (e) { /* closed */ }
       }
       alive = false;

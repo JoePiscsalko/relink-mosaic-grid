@@ -1,58 +1,65 @@
-CAMPAIGN BUILDER — make it say what went wrong
-===============================================
+CAMPAIGN BUILDER — the actual cause
+====================================
 
-Two files:
+One file:
 
-    src/CampaignBuilder.jsx
     netlify/functions/campaign.js
 
-Add file -> Upload files, drag in BOTH folders, commit.
+Add file -> Upload files, drag in the "netlify" folder, commit.
+No client change needed — the build you have is fine.
 
 
-WHY THIS BUILD EXISTS
----------------------
-I have guessed wrong about this four times running, and each guess has
-cost you an upload and a wait. "Stage 1 came back empty" tells us
-nothing about why, so I have been theorising instead of knowing.
+WHAT THE DIAGNOSTIC SAID
+------------------------
+    The API sent 8 events but no text.
+    It stopped with reason: max_tokens.
 
-This build stops the guessing. When a pass produces no text, the
-function now reports what it actually saw, in the panel, in plain
-words. Two possible answers:
+Eight events, none of them text, and it ran out of room. The model was
+spending its entire budget on extended thinking and never reaching the
+writing.
 
-  "The API accepted the request but sent nothing back before the
-   connection ended. That usually means the function was cut off at
-   its time limit."
+Extended thinking is on by default for this model. Those tokens come
+out of the same allowance as the output, and they arrive as
+thinking_delta rather than text_delta — so the parser, which only
+forwards text, saw nothing at all to send.
 
-     -> the 60 second kill, despite the smaller budgets. The fix is
-        architectural: a background function that polls, rather than
-        a request that has to finish inside a minute.
+This was behind every failure in the chain, not just the last one:
 
-  "The API sent N events but no text. It stopped with reason: X.
-   First event: {...}"
+  - The first 60 second timeout: thinking is slow and was consuming
+    the budget before any writing started
+  - The larger budgets that sometimes worked: enough room left over
+    to think AND write
+  - Shrinking passes to 1,500 tokens: guaranteed there was nothing
+    left after the thinking, which is why it went from intermittent
+    to failing every time
 
-     -> the request reached the model and something else went wrong.
-        The stop reason and first event name it exactly.
-
-Either way the next run answers the question instead of raising it.
-
-The run also halts at that point rather than building five more
-sections on top of a hole, and the explanation stays on screen.
-
-
-WHAT TO DO
-----------
-Upload, wait for green, hit Generate once, and send me the message in
-the panel. That one line decides the fix, and I would rather read it
-than guess a fifth time.
-
-If it is the time limit, the honest answer is that this feature needs
-a background function with polling rather than more budget tuning.
-That is a bigger change than anything so far, and I should have
-proposed it three attempts ago instead of shaving token counts.
+My budget tuning was making it steadily worse. Smaller passes were
+exactly the wrong direction, and I could not see it because "empty"
+was all the app could tell me.
 
 
-ALSO IN THIS BUILD
-------------------
-Everything from the last three updates: the market read pass, the
-rewritten rules that invite market knowledge, small 1,500 token passes,
-sections that continue themselves, and the empty-pass retry.
+THE FIX
+-------
+    thinking: { type: "disabled" }
+
+One line on the API request. A campaign section does not need a
+scratchpad, it needs the words. With the whole allowance going to
+output, passes went back up to 2,200 tokens and start producing
+immediately.
+
+The diagnostic also now recognises this case specifically. If thinking
+is ever switched back on, the panel says so by name instead of leaving
+you to work it out.
+
+
+WHAT TO EXPECT
+--------------
+Text appearing within a few seconds of each pass starting, seven
+passes, two to three minutes end to end.
+
+
+ON THE LAST FIVE ATTEMPTS
+--------------------------
+Four of them were me guessing. The one that worked was the one that
+made the failure explain itself, and I should have built that after
+the second failure rather than the fifth.
