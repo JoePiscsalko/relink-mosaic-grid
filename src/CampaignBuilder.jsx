@@ -682,13 +682,13 @@ export default function CampaignBuilder() {
      stitched together here. Each pass is handed everything written so far. */
   const STAGE_LABELS = ["the market read", "the idea", "the offer and channel plan", "the copy", "the keywords", "the landing page", "the emails"];
 
-  const runStage = async (n, prior, key, ctrl) => {
+  const runStage = async (n, prior, key, ctrl, resume = false) => {
     const res = await fetch(API, {
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: ctrl.signal,
       body: JSON.stringify({
-        key, stage: n, prior, by: form.by, focus: form.focus,
+        key, stage: n, prior, resume, by: form.by, focus: form.focus,
         brief: evidenceToText(ev, form, sbuName),
       }),
     });
@@ -700,11 +700,13 @@ export default function CampaignBuilder() {
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let text = "";
+    let text = "", raw = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = dec.decode(value, { stream: true }).replace(/\u200b/g, "");
+      const decoded = dec.decode(value, { stream: true }).replace(/\u200b/g, "");
+      raw += decoded;
+      const chunk = decoded.replace(/<!--MORE-->/g, "");
       if (!chunk) continue;          /* keep-alive only, nothing to show yet */
       text += chunk;
       /* Follow the text only if they are already at the bottom. Yanking
@@ -720,7 +722,7 @@ export default function CampaignBuilder() {
       err.status = 0;
       throw err;
     }
-    return text;
+    return { text, cut: raw.includes("<!--MORE-->") };
   };
 
   const generate = async (retry = true) => {
@@ -737,8 +739,21 @@ export default function CampaignBuilder() {
       for (let n = 1; n <= STAGE_LABELS.length; n++) {
         setStage(n);
         if (n > 1) { setOut((p) => p + "\n\n"); assembled += "\n\n"; }
-        const text = await runStage(n, assembled, key, ctrl);
+        let { text, cut } = await runStage(n, assembled, key, ctrl);
         assembled += text;
+
+        /* A section that ran out of room gets asked for the rest, twice at
+           most. Better than leaving a table hanging mid-row and better than
+           me guessing a token budget that holds for every brief. */
+        for (let tries = 0; cut && tries < 2; tries++) {
+          const more = await runStage(n, assembled, key, ctrl, true);
+          assembled += more.text;
+          cut = more.cut;
+        }
+        if (cut) {
+          setOut((p) => p + "\n\n> This section is still unfinished. Generate again with a shorter brief.\n");
+          assembled += "\n\n> This section is still unfinished.\n";
+        }
       }
       setStage(0);
     } catch (e) {

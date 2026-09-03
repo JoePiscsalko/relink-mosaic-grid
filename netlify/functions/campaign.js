@@ -127,14 +127,14 @@ Stop after this section.`,
   },
   5: {
     label: "the keywords",
-    tokens: 3200,
+    tokens: 3600,
     ask: `Write ONLY this section.
 
 ## Keywords
 
 **Already converting** — a table of keywords that appear in the evidence with conversions: Keyword | Spend | Conv | CPL | Action. If the evidence contains none that relate to this focus, write one short line saying so and move straight on. Do not pad it.
 
-**Worth adding** — this is the part that matters and you must always write it, at length, whether or not there was any evidence above. Propose 12 to 18 keywords from your own understanding of how this equipment gets bought and how these buyers search. Group them under intent headings:
+**Worth adding** — this is the part that matters and you must always write it, at length, whether or not there was any evidence above. Propose 12 to 15 keywords from your own understanding of how this equipment gets bought and how these buyers search. Group them under intent headings:
 
 - *Ready to transact* — someone looking to buy or sell this specific thing now
 - *Comparing options* — evaluating, pricing, checking condition or specification
@@ -227,6 +227,12 @@ export default async (req) => {
   const stage = STAGES[String(body.stage || 1)];
   if (!stage) return json({ error: "Unknown stage." }, 400);
 
+  /* A continuation picks up an unfinished section rather than restarting it. */
+  const resuming = Boolean(body.resume);
+  const ask = resuming
+    ? `The section above stops mid-flow because it ran out of room. Continue from exactly where it stops. Do not repeat anything already written, do not restart the section, do not re-introduce it, and do not add a heading. Pick up mid-sentence if that is where it broke off, and finish the section properly.`
+    : stage.ask;
+
   /* Later passes see the earlier ones so the campaign stays one campaign.
      Trimmed from the front if it grows: the recent sections matter most
      for continuity, and the brief is sent in full every time regardless. */
@@ -234,8 +240,8 @@ export default async (req) => {
   if (prior.length > MAX_PRIOR) prior = "\u2026" + prior.slice(-MAX_PRIOR);
 
   const userMessage = prior
-    ? `${brief}\n\n---\n\n# The plan so far\n\n${prior}\n\n---\n\n${stage.ask}`
-    : `${brief}\n\n---\n\n${stage.ask}`;
+    ? `${brief}\n\n---\n\n# The plan so far\n\n${prior}\n\n---\n\n${ask}`
+    : `${brief}\n\n---\n\n${ask}`;
 
   let upstream;
   try {
@@ -309,8 +315,12 @@ export default async (req) => {
                 if (alive) { alive = false; clearInterval(beat); }
                 controller.enqueue(encoder.encode(ev.delta.text));
               }
+              /* Hit the ceiling mid-section. Flag it for the browser, which
+                 asks for the rest rather than leaving a sentence hanging.
+                 Guessing token budgets per section was never going to hold —
+                 a long keyword table blows through any number I pick. */
               if (ev.type === "message_delta" && ev.delta?.stop_reason === "max_tokens")
-                controller.enqueue(encoder.encode("\n\n> This section ran out of room and stopped early. Generate again, or shorten the brief.\n"));
+                controller.enqueue(encoder.encode("\n<!--MORE-->"));
               if (ev.type === "error")
                 controller.enqueue(encoder.encode(`\n\n> The API stopped early: ${ev.error?.message || "unknown error"}\n`));
             } catch (e) { /* partial frame, wait for the rest */ }

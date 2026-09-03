@@ -1,5 +1,5 @@
-CAMPAIGN BUILDER — think first, check the data second
-======================================================
+CAMPAIGN BUILDER — sections finish themselves
+==============================================
 
 Two files:
 
@@ -7,105 +7,60 @@ Two files:
     netlify/functions/campaign.js
 
 Add file -> Upload files, drag in BOTH folders, commit.
+This includes the market read update, so if that one did not go in,
+this covers both.
 
 
-THE PROBLEM
------------
-It was not that the model would not think. It was that everything
-about how it was asked told it not to.
-
-Three things were doing that:
-
-1. The brief was mostly evidence tables and closed with "use these
-   figures exactly; do not add figures that are not here." That reads
-   as an instruction to do analysis, not strategy.
-
-2. The first and hardest rule was "never invent a number." Applied
-   broadly it produced a defensive voice — hence "Nothing in the
-   evidence touches infusion pumps. This is genuinely new ground."
-   That was obedience, and it read as refusal.
-
-3. Nothing ever asked for market knowledge. Not how this equipment
-   gets bought, not who else competes, not when budgets appear. Never
-   requested, so never offered.
-
-
-WHAT CHANGED
+WHAT YOU SAW
 ------------
+"This section ran out of room and stopped early."
 
-A new first pass: THE MARKET READ
+That message was working as designed — before it, a section would just
+stop mid-row and say nothing. But telling you to generate the whole
+plan again over one unfinished table is a poor answer.
 
-Before it touches reLink's data at all, it now writes what it knows
-about the category:
-
-  - How this actually gets bought: who raises it, who specifies, who
-    signs, how long approval takes, and whether the money is capital,
-    operating, or a disposal that funds itself
-  - What triggers it: service line closures, fleet standardisation,
-    OR refits, mergers, OEM end-of-life notices, fiscal year end —
-    and when in the year they cluster
-  - Where these buyers already are: the searches, the marketplaces
-    and auction sites, the forums, the named competitors who show up,
-    and the gap reLink can stand in
-  - What usually works in this category and what reliably does not
-  - Likely economics, marked as market judgement, with what to verify
-    in Keyword Planner first
-
-Everything after it builds on that. The idea pass is told outright:
-if the idea would work equally well for any company selling any
-equipment, it is not the idea.
-
-Rules rewritten
-
-  Before: never invent a number, full stop
-  Now:    figures attributed to reLink must come from the brief;
-          market norms, competitor behaviour, category benchmarks and
-          cost expectations are open, and should be brought freely,
-          marked as market judgement so a reader can tell them apart
-
-Plus an explicit ban on the thing that was annoying you: never open a
-section by describing what the evidence lacks. If there is no
-precedent, make the call, label it a hypothesis, give the two-week
-test that would kill it.
-
-The brief reframed
-
-The evidence section is now titled "Reference data" and introduced as
-a check on thinking rather than the boundary of it. The closing line
-changed from forbidding new figures to inviting judgement.
+The underlying problem is that I was guessing a token budget per
+section. The keyword section asks for three grouped tables with four
+columns, twelve to fifteen rows, negatives and a closing
+recommendation. How long that runs depends entirely on the brief, so
+no number I pick holds for every case.
 
 
-SEVEN PASSES NOW
-----------------
-    1. the market read              2,800
-    2. the idea, and who            2,800
-    3. the offer and channel plan   2,800
-    4. the copy                     2,800
-    5. the keywords                 3,200
-    6. landing page and measurement 2,600
-    7. the emails                   3,800
+THE FIX
+-------
+A section that runs out of room now asks for the rest of itself.
 
-20,800 tokens, roughly 21 cents a plan. Around two and a half minutes.
+When the model hits the ceiling, the function sends an invisible
+marker. The browser sees it and immediately requests a continuation,
+handing back everything written so far with one instruction: pick up
+exactly where you stopped, mid-sentence if that is where it broke,
+do not repeat, do not restart, do not add a heading.
 
+Up to two continuations per section. If it somehow still is not done
+after that, you get a visible note rather than a silent stop.
 
-WHAT TO JUDGE IT ON
--------------------
-Run the same infusion pump brief and read the market read first. If it
-names real competitors, real buying triggers and real timing, the
-change worked. If it is generic B2B filler that would fit any product,
-tell me and the fix is more specificity in that pass, not more data.
+You will not notice it happening. The text simply keeps going.
 
-Worth knowing: this is now the model's knowledge of the medical
-equipment market, which is broad but not current and not reLink's.
-Treat the market read as a well-read outsider's opinion — useful,
-occasionally wrong, and worth your correction where it is.
+The keyword budget also went from 3,200 to 3,600 and the ask from
+12-18 keywords to 12-15, so most runs will not need a continuation at
+all.
 
 
-NEXT STEP IF YOU WANT IT
-------------------------
-The API supports giving the model live web search, so the market read
-could cite current competitor pricing and real listings rather than
-working from memory. That is a genuine step up and it is a contained
-change — one stage, one tool definition. It costs more per run and
-adds time, so it is worth deciding deliberately rather than by
-default. Say the word.
+ALSO WORTH KNOWING
+------------------
+In your screenshot the pack ended at Keywords, with the footer right
+after. If the run was still going when you downloaded, the pack only
+contains what existed at that moment. Wait for the stage counter to
+disappear before downloading — that is how you know all seven passes
+are done.
+
+
+VERIFIED
+--------
+Ran against a stubbed model that deliberately truncates:
+
+    truncation marker sent          yes
+    continuation requested          yes
+    continuation asks to resume     yes, not restart
+    no duplicate heading            yes
+    marker stripped from the text   yes
